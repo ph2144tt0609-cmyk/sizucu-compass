@@ -6,8 +6,8 @@
       <stop offset="1" stop-color="#2a3540"/>
     </radialGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#3d4e5e"/>
-  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <rect width="512" height="512" fill="#3d4e5e"/>
+  <rect width="512" height="512" fill="url(#g)"/>
   <circle cx="256" cy="256" r="200" fill="none" stroke="#fbfbf8" stroke-width="6" opacity="0.55"/>
   <circle cx="256" cy="256" r="166" fill="none" stroke="#fbfbf8" stroke-width="3" opacity="0.35"/>
   <line x1="256.0" y1="84.0" x2="256.0" y2="64.0" stroke="#fbfbf8" stroke-width="7" stroke-linecap="round" opacity="0.90"/>
