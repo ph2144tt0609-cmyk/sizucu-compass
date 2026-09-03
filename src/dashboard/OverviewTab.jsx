@@ -31,7 +31,7 @@ import {
 } from "./pharmModel.js";
 import { judgeBasicFee, basicPeriods, RECEIPT_LIMIT, CONC_LIMIT } from "./basicFeeCalc.js";
 import { cloudLoad, CLOUD_KEYS } from "../cloud";
-import { loadDashboardReceipts } from "../dashboardReceipts";
+import { loadDashboardReceipts, periodToYm } from "../dashboardReceipts";
 import { migrateBaseup, defaultState, baseupSummary, PHARMACY_NAMES } from "../baseupCalc";
 import { progressOf } from "../subsidyStatus";
 import { daysUntil, daysLabel } from "../expiry";
@@ -52,6 +52,37 @@ const ymDiff = (a, b) => {
   if (!a || !b) return 0;
   return (Number(a.slice(0, 4)) - Number(b.slice(0, 4))) * 12 + (Number(a.slice(5, 7)) - Number(b.slice(5, 7)));
 };
+// 先月（＝締まっている最後の月）。今月はまだ数字が出そろわないので、未入力の判定はここまでで見る。
+const lastClosedYm = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+// from 〜 to の月を並べる（両端を含む）
+const ymRange = (from, to) => {
+  if (!from || !to || from > to) return [];
+  const out = [];
+  let y = Number(from.slice(0, 4));
+  let m = Number(from.slice(5, 7));
+  for (let i = 0; i < 240; i++) {
+    const ym = `${y}-${String(m).padStart(2, "0")}`;
+    out.push(ym);
+    if (ym >= to) break;
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+};
+const ymShort = (ym) => (ym ? `${ym.slice(2, 4)}/${Number(ym.slice(5, 7))}` : "—");
+// 月をならべて見せる（多いときは頭だけ出す＝1行に収める）
+const ymList = (yms, keep = 6) =>
+  yms.length <= keep
+    ? yms.map(ymShort).join("・")
+    : `${yms.slice(0, keep).map(ymShort).join("・")} ほか${yms.length - keep}か月`;
 
 // 前月比（増えた方が良い数字＝invert なし／率は pt で見る）
 function Delta({ cur, prev, unit, invert }) {
@@ -145,10 +176,12 @@ export default function OverviewTab({ onJump }) {
   }, [pharmData, ov]);
 
   // ── ベースアップ評価料（充当率）──
-  const baseup = useMemo(
-    () => (bstate ? baseupSummary(bstate, receipts, shops).totals : null),
+  // 月次行まで持っておく（累計だけでなく「どの月が未入力か」を出すため）
+  const baseupAll = useMemo(
+    () => (bstate ? baseupSummary(bstate, receipts, shops) : null),
     [bstate, receipts, shops]
   );
+  const baseup = baseupAll ? baseupAll.totals : null;
 
   // ── 補助金（件数・未入金・いちばん近い期限）──
   const subsidy = useMemo(() => {
@@ -176,6 +209,135 @@ export default function OverviewTab({ onJump }) {
       todo,
     };
   }, [subsidies]);
+
+  // ── 入っていないデータ（何を入れれば全部そろうか）──
+  // 「どの数字が足りないのか」が分からないと、早見表の数字が正しいのかも判断できない。
+  // そろっている項目もあえて残して、確認済みであることが分かるようにする。
+  const gaps = useMemo(() => {
+    const out = [];
+    const last = lastClosedYm();
+
+    // ① 薬局ごとの月次（最初に入力した月〜先月 のあいだで抜けている月）
+    lines
+      .filter((l) => !l.isCorp)
+      .forEach((l) => {
+        if (!l.ser.length) {
+          out.push({
+            tab: "dashboard",
+            label: `経営の月次（${l.name}）`,
+            ok: false,
+            state: "1か月も入っていません",
+            detail: "レセコンの日計明細から入れてください",
+          });
+          return;
+        }
+        const have = new Set(l.ser.map((r) => r.ym));
+        const miss = ymRange(l.ser[0].ym, last).filter((m) => !have.has(m));
+        out.push({
+          tab: "dashboard",
+          label: `経営の月次（${l.name}）`,
+          ok: miss.length === 0,
+          state: miss.length ? `${miss.length}か月ぶん未入力` : `${l.ser.length}か月そろっています`,
+          detail: miss.length ? ymList(miss) : `${ymShort(l.ser[0].ym)}〜${ymShort(l.cur.ym)}`,
+        });
+      });
+
+    // ② 片方の薬局しか入っていない月（法人の合算に入らない＝法人の数字が飛ぶ原因）
+    const shopLines = lines.filter((l) => !l.isCorp && l.ser.length);
+    if (corp && shopLines.length >= 2) {
+      // 開局が遅い薬局に合わせて数える（開局前の月まで「片落ち」と言わない）
+      const commonFrom = shopLines.map((l) => l.ser[0].ym).sort().pop();
+      const union = new Set(shopLines.flatMap((l) => l.ser.map((r) => r.ym)));
+      const corpSet = new Set(corp.ser.map((r) => r.ym));
+      const half = [...union].filter((m) => m >= commonFrom && !corpSet.has(m)).sort();
+      out.push({
+        tab: "dashboard",
+        label: "法人合算に入らない月（片方だけ入力）",
+        ok: half.length === 0,
+        state: half.length ? `${half.length}か月` : "ありません",
+        detail: half.length ? ymList(half) : `${ymShort(commonFrom)}以降は両薬局そろっています`,
+      });
+    }
+
+    // ③ 法人の人件費（労働分配率の計算に使う）
+    if (corp && corp.ser.length) {
+      const miss = corp.ser.filter((r) => !r.labor).map((r) => r.ym);
+      out.push({
+        tab: "dashboard",
+        label: "法人の人件費（労働分配率に使う）",
+        ok: miss.length === 0,
+        state: miss.length ? `${miss.length}か月ぶん未入力` : "そろっています",
+        detail: miss.length ? ymList(miss) : "",
+      });
+    }
+
+    // ④ 調剤基本料の判定期間（まだ来ていない月は「未入力」と数えない）
+    basic.list.forEach((b) => {
+      const cells = b.rows.map((r) => ({ ...r, ym: periodToYm(r.fiscalYear, r.period) }));
+      const past = cells.filter((c) => c.ym && c.ym <= last); // 経過した月だけ
+      const miss = past.filter((c) => c.total == null);
+      out.push({
+        tab: "kihonryo",
+        label: `調剤基本料の判定期間（${b.name}）`,
+        ok: miss.length === 0,
+        state: `経過 ${past.length}か月中 ${past.length - miss.length}か月`,
+        detail: miss.length
+          ? `未入力 ${ymList(miss.map((c) => c.ym))}`
+          : `判定期間 12か月のうち ${past.length}か月が経過（いまのところ全部入っています）`,
+      });
+    });
+
+    // ⑤ ベースアップ：受付回数（＝処方箋枚数）と賃金台帳
+    if (baseupAll) {
+      // 月の枠は先の月まで用意されているので、まだ来ていない月は数えない
+      const noReceipt = baseupAll.rows.filter((r) => !r.entered && r.ym <= last).map((r) => r.ym);
+      out.push({
+        tab: "baseup",
+        label: "ベースアップの受付回数",
+        ok: noReceipt.length === 0,
+        state: noReceipt.length
+          ? `${noReceipt.length}か月ぶん未入力`
+          : `${baseupAll.entered.length}か月そろっています`,
+        detail: noReceipt.length ? `${ymList(noReceipt)}（経営の月次を入れると自動で入ります）` : "",
+      });
+      const noLedger = baseupAll.entered.filter((r) => !r.fromLedger).map((r) => r.ym);
+      out.push({
+        tab: "baseup",
+        label: "ベースアップの賃金台帳",
+        ok: noLedger.length === 0,
+        state: noLedger.length
+          ? `${noLedger.length}か月ぶん未取込`
+          : `${baseupAll.entered.length}か月 取込済み`,
+        detail: noLedger.length ? `${ymList(noLedger)}（いまは職員表の固定値で計算）` : "",
+      });
+    }
+
+    // ⑥ 補助金：金額・期限が空のもの
+    if (subsidies.length) {
+      const noAmount = subsidies.filter((s) => !Number(s.amount));
+      const noDeadline = subsidies.filter((s) => !s.deadline);
+      out.push({
+        tab: "hojokin",
+        label: "補助金の金額・期限",
+        ok: !noAmount.length && !noDeadline.length,
+        state:
+          noAmount.length || noDeadline.length
+            ? `${noAmount.length + noDeadline.length}件で未設定`
+            : `${subsidies.length}件 すべて設定済み`,
+        detail: [
+          noAmount.length ? `金額なし ${noAmount.length}件` : "",
+          noDeadline.length ? `期限なし ${noDeadline.length}件（期限が無いと未申請の警告を出せません）` : "",
+        ]
+          .filter(Boolean)
+          .join("／"),
+      });
+    }
+
+    // 足りないものを上に、そろっているものを下に
+    return out.sort((a, b) => Number(a.ok) - Number(b.ok));
+  }, [lines, corp, basic, baseupAll, subsidies]);
+
+  const gapCount = gaps.filter((g) => !g.ok).length;
 
   // ── 気になるところ（上から順に手を打つ順番）──
   const alerts = useMemo(() => {
@@ -373,6 +535,103 @@ export default function OverviewTab({ onJump }) {
           </div>
         )}
       </Panel>
+
+      {/* ── ②-2 入っていないデータ ── */}
+      {gaps.length > 0 && (
+        <Panel
+          title="入っていないデータ"
+          sub={gapCount ? `あと ${gapCount} 項目` : "すべてそろっています"}
+        >
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr>
+                  {["データ", "状態", "内訳・入れ方", ""].map((h, i) => (
+                    <th
+                      key={h || i}
+                      style={{
+                        textAlign: "left",
+                        padding: "6px 8px",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: C.sub,
+                        background: C.head,
+                        borderBottom: `1px solid ${C.line}`,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {gaps.map((g) => (
+                  <tr key={g.label} style={{ background: g.ok ? "#fff" : C.amberBg }}>
+                    <td
+                      style={{
+                        padding: "7px 8px",
+                        borderBottom: `1px solid ${C.line}`,
+                        borderLeft: `3px solid ${g.ok ? "transparent" : C.amber}`,
+                        whiteSpace: "nowrap",
+                        fontWeight: 700,
+                        color: g.ok ? C.sub : C.ink,
+                      }}
+                    >
+                      {g.ok ? "✓ " : "・ "}
+                      {g.label}
+                    </td>
+                    <td
+                      style={{
+                        padding: "7px 8px",
+                        borderBottom: `1px solid ${C.line}`,
+                        whiteSpace: "nowrap",
+                        fontWeight: 700,
+                        color: g.ok ? C.up : C.amberInk,
+                      }}
+                    >
+                      {g.state}
+                    </td>
+                    <td
+                      style={{
+                        padding: "7px 8px",
+                        borderBottom: `1px solid ${C.line}`,
+                        color: C.sub,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {g.detail}
+                    </td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${C.line}`, textAlign: "right" }}>
+                      {!g.ok && (
+                        <button
+                          onClick={() => onJump && onJump(g.tab)}
+                          style={{
+                            font: "inherit",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            color: C.accentD,
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          入れる ›
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 8, lineHeight: 1.7 }}>
+            未入力の判定は「最初に入力した月〜先月」で見ています（今月はまだ数字が出そろわないので数えません）。
+          </div>
+        </Panel>
+      )}
 
       {/* ── ③ 4つの道具の現在地 ── */}
       <Panel title="4つの道具の現在地" sub="押すとその画面へ">
