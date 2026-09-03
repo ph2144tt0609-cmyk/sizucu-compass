@@ -9,93 +9,35 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { seed } from "./seed.js";
+import { seed } from "./seed.js"; // 医師名（doctors）は seed から直接読む
 import BasicFee from "./BasicFee.jsx";
 import { cloudLoad, cloudSave, CLOUD_KEYS } from "../cloud";
+import { C, FONT_SANS, FONT_HEAD } from "./theme.js";
+import {
+  CORP_NAME,
+  FISCAL_MONTHS,
+  loadOverrides,
+  saveOverrides,
+  ovHasData,
+  enrich,
+  mergePharmData,
+  mergeCorpLabor,
+  collectYears,
+  rowsFor as rowsForModel,
+} from "./pharmModel.js";
 
 // 経営数字(pharmacies)・医師名(doctors)・法人人件費(corpLabor)は src/seed.local.js に分離し、
 // 暗号化して seed 経由で供給する（＝私が用意する基準値）。それに画面からの手入力(override)を重ねる。
-
-const CORP_NAME = "株式会社しずく"; // 法人（各薬局の合算を自動表示）
-const OV_KEY = "pharmacy-dashboard-overrides-v1"; // 画面から手入力した月次データ（この端末のみ）
-
-// 会計年度は10月始まり（10月→翌9月）。この並びで月を並べる。
-const FISCAL_MONTHS = ["10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月"];
-const monthRank = (p) => {
-  const i = FISCAL_MONTHS.indexOf(p);
-  return i < 0 ? 99 : i;
-};
-const sortFiscal = (rows) => [...rows].sort((a, b) => monthRank(a.period) - monthRank(b.period));
+//
+// ★数字の作り方（override の読み書き・seed との重ね合わせ・派生指標・法人の合算）は
+//   ./pharmModel.js に置いてある。早見表・調剤基本料の判定と同じ数字を使うため、ここでは計算しない。
 
 const toNum = (s) => Number(String(s).replace(/[^0-9.-]/g, "")) || 0;
-
-// 手入力(override)の読み書き。形＝{ pharm:{ "薬局名":{ "年度":{ "月":{total,other,tech,drug} } } }, corpLabor:{ "年度":{ "月":labor } }, years:[追加年度] }
-function loadOverrides() {
-  try {
-    const o = JSON.parse(localStorage.getItem(OV_KEY));
-    if (o && typeof o === "object") return { pharm: o.pharm || {}, corpLabor: o.corpLabor || {}, years: o.years || [], excluded: o.excluded || {}, _ts: o._ts || 0 };
-  } catch {
-    // 無視
-  }
-  return { pharm: {}, corpLabor: {}, years: [], excluded: {}, _ts: 0 };
-}
-// 手入力が1件でもあるか（空データで実データを上書きしないための判定）
-const ovHasData = (o) =>
-  !!(o && (Object.keys(o.pharm || {}).length || Object.keys(o.corpLabor || {}).length || (o.years || []).length || Object.keys(o.excluded || {}).length));
-function saveOverrides(o) {
-  try {
-    localStorage.setItem(OV_KEY, JSON.stringify(o));
-  } catch {
-    // 無視
-  }
-}
 
 // ── クラウド同期 ───────────────────────────────────────
 // 手入力データを合言葉でAES-256-GCM暗号化して Supabase に保存し、全端末で共有する。
 // サーバには暗号文しか渡らない（平文の経営数字はクラウドに残らない）。
 // 暗号化・保存の実体は ../cloud.ts（補助金・ベースアップと同じ置き場を使う）。
-
-// ── 派生指標 ───────────────────────────────────────────
-function enrich(rows) {
-  return rows.map((r) => {
-    const main = r.total - r.other; // メインクリニック枚数
-    return {
-      ...r,
-      main,
-      concentration: r.total ? (main / r.total) * 100 : 0, // 集中率
-      otherRate: r.total ? (r.other / r.total) * 100 : 0, // 他科率
-      techRate: r.sales ? (r.tech / r.sales) * 100 : 0, // 技術料率
-      perRx: r.total ? r.sales / r.total : 0, // 処方箋1枚あたり売上
-      laborDist: r.labor && r.tech ? (r.labor / r.tech) * 100 : 0, // 労働分配率（人件費÷技術料）
-    };
-  });
-}
-
-// 法人（株式会社しずく）の月次を各薬局の合算で自動生成する。
-// total/other/sales/tech/drug は薬局の単純合計。labor（人件費）は合算できないので corpLabor から補う。
-// ★半月対策★：その年度にデータを持つ全薬局がそろって報告している月だけを合算対象にする。
-function buildCorpRows(pharmData, corpLabor, year) {
-  const contributing = pharmData.filter((p) => p.years && p.years[year] && p.years[year].length);
-  const nP = contributing.length;
-  const map = new Map(); // period -> 集計（count=その月を報告した薬局数）
-  contributing.forEach((p) => {
-    p.years[year].forEach((r) => {
-      const a = map.get(r.period) || { period: r.period, total: 0, other: 0, sales: 0, tech: 0, drug: 0, count: 0 };
-      a.total += r.total || 0;
-      a.other += r.other || 0;
-      a.sales += r.sales || 0;
-      a.tech += r.tech || 0;
-      a.drug += r.drug || 0;
-      a.count += 1;
-      map.set(r.period, a);
-    });
-  });
-  const labor = (corpLabor && corpLabor[year]) || {};
-  const rows = [...map.values()]
-    .filter((a) => a.count === nP) // 全薬局がそろった月のみ
-    .map(({ count, ...rest }) => ({ ...rest, labor: labor[rest.period] || 0 }));
-  return sortFiscal(rows);
-}
 
 const yen = (n) => "¥" + Math.round(n).toLocaleString("ja-JP");
 const man = (n) => (n / 10000).toLocaleString("ja-JP", { maximumFractionDigits: 0 }) + "万";
@@ -148,37 +90,6 @@ const mdLabel = (md) => {
   const [m, d] = md.split("-").map(Number);
   return `${m}/${d}`;
 };
-
-// ── 色 ────────────────────────────────────────────────
-// 2026-09-03：淡くて読みにくかったので、マネーフォワード寄りに作り替えた。
-//   ・文字（ink/sub）は白地で4.5:1以上まで濃くする
-//   ・罫線（border/line）は「透明度10%のネイビー」をやめて、見えるグレーの実線にする
-//   ・押せるもの・選ばれているものは青（accent）ひと色に統一する
-const C = {
-  teal: "#2f4459", // ネイビー（見出し・帯）
-  tealDeep: "#1e2c3a", // 濃ネイビー
-  tealBright: "#2f6faf", // 青（グラフの明側）
-  accent: "#1a6bb0", // 操作の青（選択中・ボタン）
-  accentD: "#135690",
-  accentL: "#e8f1f9", // 青の淡い面（選択前の下地・タグ）
-  sage: "#b6c5d1", // ブルーグレー（チャート副系）
-  sageDeep: "#93a6b5",
-  amber: "#c39320", // ゴールド（集中率アクセント）
-  amberSoft: "#e3c469",
-  ink: "#1b2836", // 本文インク（濃く）
-  sub: "#46586a", // サブテキスト（濃く）
-  up: "#4c7a2b", // グリーン（良化・目標達成）
-  down: "#c0392f", // レッド（悪化）
-  line: "#d2d9e0", // 罫線
-  head: "#f4f7f9", // 表・カード見出しの帯
-  bg: "#eef1f4", // 地のグレー
-  card: "#FFFFFF",
-  border: "#d2d9e0", // カードの輪郭（見える線にする）
-};
-
-const FONT_SANS = '"Zen Kaku Gothic New", -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-// 見出しもゴシック。明朝の細い横棒＋広い字間が「淡くて読みにくい」の主因だった。
-const FONT_HEAD = FONT_SANS;
 
 const DROP_PATH =
   "M256 150 C 206 240, 160 300, 160 350 A 96 96 0 1 0 352 350 C 352 300, 306 240, 256 150 Z";
@@ -294,38 +205,8 @@ export default function DashboardTab({ view = "keiei" }) {
     };
   }, []);
 
-  const pharmData = useMemo(
-    () =>
-      seed.pharmacies.map((p) => {
-        const ov = (overrides.pharm && overrides.pharm[p.name]) || {};
-        const yearKeys = new Set([...Object.keys(p.years || {}), ...Object.keys(ov)]);
-        const years = {};
-        yearKeys.forEach((y) => {
-          const map = new Map(((p.years && p.years[y]) || []).map((r) => [r.period, r]));
-          Object.entries(ov[y] || {}).forEach(([period, v]) => {
-            map.set(period, {
-              period,
-              total: v.total || 0,
-              other: v.other || 0,
-              tech: v.tech || 0,
-              drug: v.drug || 0,
-              sales: (v.tech || 0) + (v.drug || 0),
-            });
-          });
-          years[y] = [...map.values()];
-        });
-        return { name: p.name, years };
-      }),
-    [overrides]
-  );
-
-  const corpLabor = useMemo(() => {
-    const out = { ...(seed.corpLabor || {}) };
-    Object.entries(overrides.corpLabor || {}).forEach(([y, months]) => {
-      out[y] = { ...(out[y] || {}), ...months };
-    });
-    return out;
-  }, [overrides]);
+  const pharmData = useMemo(() => mergePharmData(overrides), [overrides]);
+  const corpLabor = useMemo(() => mergeCorpLabor(overrides), [overrides]);
 
   // 選択：薬局（0..n-1＝各薬局 / n＝法人）と年度・月
   const [phIdx, setPhIdx] = useState(0);
@@ -333,15 +214,7 @@ export default function DashboardTab({ view = "keiei" }) {
   const activeName = isCorp ? CORP_NAME : (pharmData[phIdx] ? pharmData[phIdx].name : "");
 
   // 存在する年度の一覧（新しい順）
-  const years = useMemo(() => {
-    const s = new Set();
-    seed.pharmacies.forEach((p) => Object.keys(p.years || {}).forEach((y) => s.add(y)));
-    Object.keys(seed.corpLabor || {}).forEach((y) => s.add(y));
-    Object.values(overrides.pharm || {}).forEach((byY) => Object.keys(byY).forEach((y) => s.add(y)));
-    Object.keys(overrides.corpLabor || {}).forEach((y) => s.add(y));
-    (overrides.years || []).forEach((y) => s.add(y));
-    return [...s].sort((a, b) => Number(b) - Number(a));
-  }, [overrides]);
+  const years = useMemo(() => collectYears(overrides), [overrides]);
 
   const [year, setYear] = useState(() => years[0]);
   useEffect(() => {
@@ -366,10 +239,7 @@ export default function DashboardTab({ view = "keiei" }) {
   const [evDate, setEvDate] = useState("");
 
   // 指定した薬局インデックス・年度の月次（法人は自動合算）
-  const rowsFor = (index, yr) => {
-    if (index === pharmData.length) return buildCorpRows(pharmData, corpLabor, yr);
-    return sortFiscal((pharmData[index] && pharmData[index].years && pharmData[index].years[yr]) || []);
-  };
+  const rowsFor = (index, yr) => rowsForModel(pharmData, corpLabor, index, yr);
 
   const prevYearLabel = String(Number(year) - 1);
   const data = useMemo(() => enrich(rowsFor(phIdx, year)), [phIdx, year, pharmData, corpLabor]);

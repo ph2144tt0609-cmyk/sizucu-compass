@@ -10,76 +10,26 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import {
+  RECEIPT_LIMIT,
+  CONC_LIMIT,
+  basicPeriods,
+  judgeBasicFee,
+} from "./basicFeeCalc.js";
+import { C, FONT_HEAD } from "./theme.js";
 
-// 調剤基本料の判定ビュー（令和6年〜の施設基準に準拠）。
-// ★調剤基本料2（30点）になるのは「月平均受付回数 1,800回超」かつ「処方箋集中率 85%超」の"両方"に該当したときのみ。★
-//   受付回数：時間外・休日・深夜加算を算定した処方箋は除外できる（＝除外枚数を差し引く）。
-//   集中率：最も多い1医療機関の割合。他科（別医療機関）が多いほど下がる。
-//   判定期間：前年5/1〜当年4/30 の実績（翌年6/1〜適用）。
+// 調剤基本料の判定ビュー（画面）。
+// ★判定の計算（1,800回・85%の2条件、除外枚数の差し引き、期間の組み立て）は ./basicFeeCalc.js に置いてある。
+//   早見表も同じ関数を使うので、ここでは計算しない。
 // データは経営タブと同じ pharmData（会計年度=10月始まりの years{}）を5月始まりに組み替えて使う。
-//   5〜9月 → 一つ前の会計年度(P-1) / 10〜4月 → 当会計年度(P)
 
-// 色は DashboardTab の C と同じ値にそろえる（2026-09-03：コントラストを上げた版）
-const C = {
-  teal: "#2f4459",
-  tealBright: "#2f6faf",
-  accent: "#1a6bb0",
-  accentD: "#135690",
-  sage: "#b6c5d1",
-  amber: "#c39320",
-  ink: "#1b2836",
-  sub: "#46586a",
-  up: "#4c7a2b",
-  down: "#c0392f",
-  line: "#d2d9e0",
-  head: "#f4f7f9",
-  border: "#d2d9e0",
-};
-const FONT_HEAD =
-  '"Zen Kaku Gothic New", -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
 const mai = (n) => Math.round(n).toLocaleString("ja-JP") + "枚";
 const yy = (y) => String(y % 100).padStart(2, "0");
-
-const RECEIPT_LIMIT = 1800; // 月平均受付回数の基準（超で条件成立）
-const CONC_LIMIT = 85; // 処方箋集中率の基準%（超で条件成立）
-
-const BASIC_MONTHS = ["5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月", "1月", "2月", "3月", "4月"];
-const PREV_MONTHS = new Set(["5月", "6月", "7月", "8月", "9月"]); // 前会計年度(P-1)から取る月
-
-// 各月がどの会計年度キーに属するか（5〜9月=P-1 / 10〜4月=P）
-const fiscalOf = (P, month) => String(PREV_MONTHS.has(month) ? P - 1 : P);
-
-// 薬局 pharm の 基本料期間 P（P年5/1〜P+1年4/30）の月次を組み立てる
-function basicRows(pharm, P) {
-  const prev = (pharm.years && pharm.years[String(P - 1)]) || [];
-  const cur = (pharm.years && pharm.years[String(P)]) || [];
-  const find = (rows, m) => rows.find((r) => r.period === m);
-  return BASIC_MONTHS.map((m) => {
-    const src = PREV_MONTHS.has(m) ? prev : cur;
-    const r = find(src, m);
-    return {
-      period: m,
-      fiscalYear: fiscalOf(P, m),
-      total: r ? r.total : null, // 受付回数（除外前）
-      other: r ? r.other : 0, // 他科枚数
-    };
-  });
-}
 
 export default function BasicFee({ pharmData, isDesktop, excluded = {}, onSetExcluded }) {
   // 各会計年度K は 基本料期間K（10〜4月分）と K+1（5〜9月分）に使われるので、両方を候補に含める。
   // 例：会計年度2025 があれば '25/5〜'26/4（P=2025）と '26/5〜'27/4（P=2026）を選べる。
-  const periods = useMemo(() => {
-    const s = new Set();
-    pharmData.forEach((p) =>
-      Object.keys(p.years || {}).forEach((y) => {
-        const k = Number(y);
-        s.add(k);
-        s.add(k + 1);
-      })
-    );
-    return [...s].sort((a, b) => b - a);
-  }, [pharmData]);
+  const periods = useMemo(() => basicPeriods(pharmData), [pharmData]);
 
   const [P, setP] = useState(() => periods[0]);
   useEffect(() => {
@@ -152,23 +102,9 @@ export default function BasicFee({ pharmData, isDesktop, excluded = {}, onSetExc
 }
 
 function PharmacyCard({ pharm, P, excluded, onSetExcluded }) {
-  const rows = useMemo(() => basicRows(pharm, P), [pharm, P]);
-  const exOf = (r) => Number(((excluded[pharm.name] || {})[r.fiscalYear] || {})[r.period] || 0);
-
-  // 集計（登録済みの月のみ）
-  const present = rows.filter((r) => r.total != null);
-  const n = present.length;
-  const sumTotal = present.reduce((s, r) => s + r.total, 0);
-  const sumOther = present.reduce((s, r) => s + (r.other || 0), 0);
-  const sumEx = present.reduce((s, r) => s + exOf(r), 0);
-  const avgAdj = n ? (sumTotal - sumEx) / n : 0; // 除外後の月平均受付回数
-  const avgRaw = n ? sumTotal / n : 0;
-  const conc = sumTotal ? ((sumTotal - sumOther) / sumTotal) * 100 : 0; // 集中率＝最多院/全体（他科を除いた分）
-
-  const overReceipt = n > 0 && avgAdj > RECEIPT_LIMIT;
-  const overConc = n > 0 && conc > CONC_LIMIT;
-  const isBasic2 = overReceipt && overConc;
-  const accent = n === 0 ? C.sub : isBasic2 ? C.down : C.up;
+  const judged = useMemo(() => judgeBasicFee(pharm, P, excluded), [pharm, P, excluded]);
+  const { rows, exOf, n, sumOther, sumEx, avgAdj, avgRaw, conc, overReceipt, overConc, isBasic2 } =
+    judged;
 
   const [openEx, setOpenEx] = useState(false);
   const [draft, setDraft] = useState({});

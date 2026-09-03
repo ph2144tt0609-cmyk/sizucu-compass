@@ -5,6 +5,7 @@ import { SubsidyEditor } from './components/SubsidyEditor'
 import { BaseupTab } from './components/BaseupTab'
 import { Migrate } from './components/Migrate'
 import DashboardTab from './dashboard/DashboardTab.jsx'
+import OverviewTab from './dashboard/OverviewTab.jsx'
 import { Gate } from './Gate'
 import { cloudLoad, cloudSave, CLOUD_KEYS, clearPass } from './cloud'
 import { progressOf, groupRankOf } from './subsidyStatus'
@@ -21,10 +22,13 @@ export default function App() {
   )
 }
 
-// 4つの道具を横並びにする（順番＝経営 → 調剤基本料 → ベースアップ → 補助金）
-type Tab = 'dashboard' | 'kihonryo' | 'baseup' | 'hojokin'
+// 1ページめは【早見表】＝全体像。そのあとに4つの道具を横並びにする
+// （順番＝早見表 → 経営 → 調剤基本料 → ベースアップ → 補助金）。
+// 開いた瞬間から各論に入らないよう、既定のタブは早見表にしてある。
+type Tab = 'overview' | 'dashboard' | 'kihonryo' | 'baseup' | 'hojokin'
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'overview', label: '早見表' },
   { key: 'dashboard', label: '経営ダッシュボード' },
   { key: 'kihonryo', label: '調剤基本料 判定' },
   { key: 'baseup', label: 'ベースアップ評価料' },
@@ -32,7 +36,7 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 function Main() {
-  const [tab, setTab] = useState<Tab>('dashboard')
+  const [tab, setTab] = useState<Tab>('overview')
   const [migrating, setMigrating] = useState(false)
 
   return (
@@ -88,7 +92,10 @@ function Main() {
       <div className="app">
         {/* 経営ダッシュボードと調剤基本料 判定は同じ土台（同じ月次データ）を使うので、
             同じ位置に DashboardTab を置いて view だけ切り替える（タブ往復で読み直しが起きない）。 */}
-        {tab === 'dashboard' || tab === 'kihonryo' ? (
+        {tab === 'overview' ? (
+          // 早見表のカード・アラートを押したら、その道具のタブへ移る
+          <OverviewTab onJump={(t: Tab) => setTab(t)} />
+        ) : tab === 'dashboard' || tab === 'kihonryo' ? (
           <DashboardTab view={tab === 'kihonryo' ? 'kihonryo' : 'keiei'} />
         ) : tab === 'baseup' ? (
           <BaseupTab />

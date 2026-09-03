@@ -489,3 +489,146 @@ export function migrateBaseup(
   const one = migrateOne(o)
   return one ? { state: one, mergedFromShops: false } : null
 }
+
+// ── 月次の組み立てと累計 ────────────────────────────────
+// ベースアップ評価料タブと早見表が同じ数字を出すよう、月次行と累計はここで作る。
+// （画面側でもう一度足し直さない＝表と早見表で充当率がズレない）
+
+export interface BaseupRow extends ResolvedMonth {
+  pts: number
+  income: number
+  incomeByShop: Record<string, number>
+  bea: number
+  allowance: number
+  overtime: number
+  surcharge: number
+  improve: number
+  diff: number
+  cumIncome: number
+  cumImprove: number
+  cumDiff: number
+  fromLedger: number // その月に賃金台帳の実績を使った人数
+  otHours: number // その月の実残業時間の合計
+}
+
+export interface BaseupTotals {
+  income: number
+  improve: number
+  bea: number
+  allowance: number
+  overtime: number
+  surcharge: number
+  receipts: number
+  byShop: Record<string, { receipts: number; income: number }>
+  diff: number
+  /** 充当率＝賃金改善 ÷ 評価料収入（%） */
+  rate: number
+  /** 100%以上＝適合 */
+  ok: boolean
+  /** 集計に入った月数（受付回数が確定している月） */
+  count: number
+}
+
+/** 解決済みの月（resolveMonths の結果）から、収入・賃金改善・累計を載せた月次行を作る */
+export function buildBaseupRows(state: BaseupState, resolved: ResolvedMonth[]): BaseupRow[] {
+  const staff = state.staff
+  return resolved.reduce<{ list: BaseupRow[]; cumIncome: number; cumImprove: number }>(
+    (acc, mo) => {
+      const pts = pointsForMonth(mo.ym)
+      const income = mo.entered ? mo.receipts * pts * YEN_PER_POINT : 0
+      // 薬局別の収入＝その薬局の受付回数 × 点数 × 10円（点数は法人共通）
+      const incomeByShop: Record<string, number> = {}
+      Object.entries(mo.byShop).forEach(([name, n]) => {
+        incomeByShop[name] = n * pts * YEN_PER_POINT
+      })
+
+      // 適用開始月を迎えた職員だけを、その月の賃金改善に算入する
+      const active = staff.filter((s) => (s.startYm || '0000-00') <= mo.ym)
+      const zero = {
+        bea: 0,
+        allowance: 0,
+        overtime: 0,
+        surcharge: 0,
+        improve: 0,
+        fromLedger: 0,
+        otHours: 0,
+      }
+      // 賃金台帳が入っている月はその月の実績で、無ければ職員マスタの固定値で計算する
+      const sums = mo.entered
+        ? active.reduce((t, s) => {
+            const a = staffAmountsAt(s, mo.ym, state)
+            return {
+              bea: t.bea + a.bea,
+              allowance: t.allowance + a.allowance,
+              overtime: t.overtime + a.overtime,
+              surcharge: t.surcharge + a.surcharge,
+              improve: t.improve + a.charged,
+              fromLedger: t.fromLedger + (a.fromLedger ? 1 : 0),
+              // 台帳から読めた人の残業時間だけを足す（固定値の人は混ぜない）
+              otHours: t.otHours + (a.otFromLedger ? a.overtimeHours : 0),
+            }
+          }, zero)
+        : zero
+
+      const cumIncome = acc.cumIncome + income
+      const cumImprove = acc.cumImprove + sums.improve
+      acc.list.push({
+        ...mo,
+        pts,
+        income,
+        incomeByShop,
+        ...sums,
+        diff: sums.improve - income,
+        cumIncome,
+        cumImprove,
+        cumDiff: cumImprove - cumIncome,
+      })
+      return { list: acc.list, cumIncome, cumImprove }
+    },
+    { list: [], cumIncome: 0, cumImprove: 0 },
+  ).list
+}
+
+/** 入力済みの月次行から累計と充当率を出す */
+export function sumBaseupRows(enteredRows: BaseupRow[], shops: string[]): BaseupTotals {
+  const sum = (f: (r: BaseupRow) => number) => enteredRows.reduce((a, r) => a + f(r), 0)
+  const income = sum((r) => r.income)
+  const improve = sum((r) => r.improve)
+  // 薬局別の受付回数・収入の累計（内訳表示用）
+  const byShop: Record<string, { receipts: number; income: number }> = {}
+  shops.forEach((name) => {
+    byShop[name] = { receipts: 0, income: 0 }
+  })
+  enteredRows.forEach((r) => {
+    Object.entries(r.byShop).forEach(([name, n]) => {
+      if (!byShop[name]) byShop[name] = { receipts: 0, income: 0 }
+      byShop[name].receipts += n
+      byShop[name].income += r.incomeByShop[name] || 0
+    })
+  })
+  return {
+    income,
+    improve,
+    bea: sum((r) => r.bea),
+    allowance: sum((r) => r.allowance),
+    overtime: sum((r) => r.overtime),
+    surcharge: sum((r) => r.surcharge),
+    receipts: sum((r) => r.receipts),
+    byShop,
+    diff: improve - income,
+    rate: income > 0 ? (improve / income) * 100 : 0,
+    ok: improve >= income,
+    count: enteredRows.length,
+  }
+}
+
+/** 早見表用：状態と受付回数から、月次行と累計をまとめて出す */
+export function baseupSummary(
+  state: BaseupState,
+  receipts: ReceiptsByShop,
+  shops: string[],
+): { rows: BaseupRow[]; entered: BaseupRow[]; totals: BaseupTotals } {
+  const rows = buildBaseupRows(state, resolveMonths(state, receipts))
+  const entered = rows.filter((r) => r.entered)
+  return { rows, entered, totals: sumBaseupRows(entered, shops) }
+}
