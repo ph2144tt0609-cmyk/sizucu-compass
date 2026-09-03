@@ -179,9 +179,13 @@ export function seriesOf(pharmData, corpLabor, index, years) {
   ;[...years]
     .sort((a, b) => Number(a) - Number(b))
     .forEach((y) => {
-      enrich(rowsFor(pharmData, corpLabor, index, y)).forEach((r) => {
-        out.push({ ...r, year: y, ym: periodToYm(y, r.period) || '' })
-      })
+      enrich(rowsFor(pharmData, corpLabor, index, y))
+        // 枚数も売上も0の月は「枠だけあって未入力」なので、確定月として扱わない
+        // （これを混ぜると早見表の「直近の確定月」が 0 の月になってしまう）
+        .filter((r) => (r.total || 0) > 0 || (r.sales || 0) > 0)
+        .forEach((r) => {
+          out.push({ ...r, year: y, ym: periodToYm(y, r.period) || '' })
+        })
     })
   return out.sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0))
 }
