@@ -34,7 +34,7 @@ const OV_KEY = 'pharmacy-dashboard-overrides-v1' // DashboardTab.jsx と同じ�
 interface MonthValue {
   total?: number
 }
-interface Overrides {
+export interface Overrides {
   pharm?: Record<string, Record<string, Record<string, MonthValue>>>
   corpLabor?: Record<string, unknown>
   years?: unknown[]
@@ -85,8 +85,17 @@ export async function loadDashboardReceipts(): Promise<{
   const cloud = await cloudLoad<Overrides>(CLOUD_KEYS.dashboard).catch(() => null)
   const useCloud =
     hasData(cloud) && (!hasData(local) || (cloud?._ts || 0) >= (local?._ts || 0))
-  const ov: Overrides = (useCloud ? cloud : local) || {}
+  return buildReceipts((useCloud ? cloud : local) || {})
+}
 
+/**
+ * 手入力(override)と暗号化seedから、受付回数を ym → 薬局名 → 回数 の形に組み立てる（通信しない）。
+ * 早見表はすでに override を読んでいるので、こちらを直接呼んで二重に読みに行かない。
+ */
+export function buildReceipts(ov: Overrides): {
+  receipts: ReceiptsByShop
+  shops: string[]
+} {
   const receipts: ReceiptsByShop = {}
   const shops: string[] = []
   const put = (ym: string, shop: string, total: unknown) => {

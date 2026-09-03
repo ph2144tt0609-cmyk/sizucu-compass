@@ -7,7 +7,7 @@
 //   ・法人（各薬局の合算）の作り方
 // はここ1か所だけに置く。画面側でもう一度計算しない＝数字がズレない。
 import { seed } from './seed.js'
-import { cloudLoad, CLOUD_KEYS } from '../cloud'
+import { cloudLoadEx, CLOUD_KEYS } from '../cloud'
 import { periodToYm } from '../dashboardReceipts'
 
 export const CORP_NAME = '株式会社しずく' // 法人（各薬局の合算を自動表示）
@@ -60,19 +60,26 @@ export function saveOverrides(o) {
   }
 }
 
-/** クラウドとこの端末の手入力を突き合わせ、「中身があって新しい方」を返す（読み取り専用） */
+/**
+ * クラウドとこの端末の手入力を突き合わせ、「中身があって新しい方」を返す（読み取り専用）。
+ * status も返すのは、早見表が「読み込み失敗」と「本当に空」を区別するため
+ * （失敗を空として表示すると、入っているはずの数字が消えたように見えてしまう）。
+ */
 export async function loadOverridesMerged() {
   const local = loadOverrides()
-  const cloud = await cloudLoad(CLOUD_KEYS.dashboard).catch(() => null)
+  const res = await cloudLoadEx(CLOUD_KEYS.dashboard).catch(() => ({ data: null, status: 'error' }))
+  const cloud = res.data
   const useCloud = ovHasData(cloud) && (!ovHasData(local) || (cloud._ts || 0) >= (local._ts || 0))
-  if (!useCloud) return local
-  return {
-    pharm: cloud.pharm || {},
-    corpLabor: cloud.corpLabor || {},
-    years: cloud.years || [],
-    excluded: cloud.excluded || {},
-    _ts: cloud._ts || 0,
-  }
+  const ov = useCloud
+    ? {
+        pharm: cloud.pharm || {},
+        corpLabor: cloud.corpLabor || {},
+        years: cloud.years || [],
+        excluded: cloud.excluded || {},
+        _ts: cloud._ts || 0,
+      }
+    : local
+  return { ov, status: res.status, usedLocal: !useCloud && ovHasData(local) }
 }
 
 // ── 派生指標 ───────────────────────────────────────────

@@ -30,8 +30,8 @@ import {
   seriesOf,
 } from "./pharmModel.js";
 import { judgeBasicFee, basicPeriods, RECEIPT_LIMIT, CONC_LIMIT } from "./basicFeeCalc.js";
-import { cloudLoad, CLOUD_KEYS } from "../cloud";
-import { loadDashboardReceipts, periodToYm } from "../dashboardReceipts";
+import { cloudLoadEx, CLOUD_KEYS } from "../cloud";
+import { buildReceipts, periodToYm } from "../dashboardReceipts";
 import { migrateBaseup, defaultState, baseupSummary, PHARMACY_NAMES } from "../baseupCalc";
 import { progressOf } from "../subsidyStatus";
 import { daysUntil, daysLabel } from "../expiry";
@@ -99,32 +99,51 @@ function Delta({ cur, prev, unit, invert }) {
   );
 }
 
+// 通信の一過性の失敗で「データなし」に見えるのを防ぐため、1回だけ読み直す
+async function loadCloud(key) {
+  let res = await cloudLoadEx(key).catch(() => ({ data: null, status: "error" }));
+  if (res.status === "error") {
+    await new Promise((r) => setTimeout(r, 800));
+    res = await cloudLoadEx(key).catch(() => ({ data: null, status: "error" }));
+  }
+  return res;
+}
+
+const LOAD_LABEL = { error: "読み込めませんでした", locked: "合言葉で開けませんでした" };
+
 export default function OverviewTab({ onJump }) {
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState({ dashboard: "ok", baseup: "ok", subsidies: "ok" });
   const [ov, setOv] = useState(null);
   const [bstate, setBstate] = useState(null);
   const [receipts, setReceipts] = useState({});
   const [shops, setShops] = useState(PHARMACY_NAMES);
   const [subsidies, setSubsidies] = useState([]);
 
-  // 4つの道具のデータをまとめて読む（どれかが落ちても他は出す）
+  // 4つの道具のデータをまとめて読む（どれかが落ちても他は出す）。
+  // ★読み込みに失敗したものを「0件・未入力」として描かない★
+  //   このページは「入っていないデータ」を出すのが役目なので、通信の失敗を空データとして
+  //   表示すると、入っているはずの数字が消えたように見えてしまう（2026-09-04 に本番で発生）。
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [o, r, b, s] = await Promise.all([
-        loadOverridesMerged().catch(() => null),
-        loadDashboardReceipts().catch(() => ({ receipts: {}, shops: [] })),
-        cloudLoad(CLOUD_KEYS.baseup).catch(() => null),
-        cloudLoad(CLOUD_KEYS.subsidies).catch(() => null),
+      const [o, b, s] = await Promise.all([
+        loadOverridesMerged().catch(() => ({ ov: null, status: "error" })),
+        loadCloud(CLOUD_KEYS.baseup),
+        loadCloud(CLOUD_KEYS.subsidies),
       ]);
       if (!alive) return;
-      setOv(o || { pharm: {}, corpLabor: {}, years: [], excluded: {} });
+      const merged = o.ov || { pharm: {}, corpLabor: {}, years: [], excluded: {} };
+      setOv(merged);
+      // 受付回数は、いま読んだ手入力からその場で組み立てる（同じデータを二度読みに行かない）
+      const r = buildReceipts(merged);
       setReceipts(r.receipts || {});
       if (r.shops && r.shops.length) setShops(r.shops);
       // migrateBaseup は変換するだけ（保存はしない＝早見表は読むだけ）
-      const m = migrateBaseup(b);
+      const m = migrateBaseup(b.data);
       setBstate(m ? m.state : defaultState());
-      setSubsidies(Array.isArray(s) ? s : []);
+      setSubsidies(Array.isArray(s.data) ? s.data : []);
+      setStatus({ dashboard: o.status, baseup: b.status, subsidies: s.status });
       setLoading(false);
     })();
     return () => {
@@ -216,6 +235,17 @@ export default function OverviewTab({ onJump }) {
   const gaps = useMemo(() => {
     const out = [];
     const last = lastClosedYm();
+    // 読めなかったものは「入っていない」ではなく「読めなかった」と出す
+    const badLoad = (st) => st === "error" || st === "locked";
+    const loadRow = (tab, label, st) => ({
+      tab,
+      label,
+      ok: false,
+      state: LOAD_LABEL[st] || "読み込めませんでした",
+      detail: "通信の状態を確かめて、画面を再読み込みしてください（データは消えていません）",
+      reload: true, // タブへ飛んでも直らないので、行の操作は「再読み込み」にする
+    });
+    if (badLoad(status.dashboard)) out.push(loadRow("dashboard", "経営の月次", status.dashboard));
 
     // ① 薬局ごとの月次（最初に入力した月〜先月 のあいだで抜けている月）
     lines
@@ -288,7 +318,9 @@ export default function OverviewTab({ onJump }) {
     });
 
     // ⑤ ベースアップ：受付回数（＝処方箋枚数）と賃金台帳
-    if (baseupAll) {
+    if (badLoad(status.baseup)) {
+      out.push(loadRow("baseup", "ベースアップ評価料のデータ", status.baseup));
+    } else if (baseupAll) {
       // 月の枠は先の月まで用意されているので、まだ来ていない月は数えない
       const noReceipt = baseupAll.rows.filter((r) => !r.entered && r.ym <= last).map((r) => r.ym);
       out.push({
@@ -313,7 +345,9 @@ export default function OverviewTab({ onJump }) {
     }
 
     // ⑥ 補助金：金額・期限が空のもの
-    if (subsidies.length) {
+    if (badLoad(status.subsidies)) {
+      out.push(loadRow("hojokin", "補助金のデータ", status.subsidies));
+    } else if (subsidies.length) {
       const noAmount = subsidies.filter((s) => !Number(s.amount));
       const noDeadline = subsidies.filter((s) => !s.deadline);
       out.push({
@@ -335,9 +369,16 @@ export default function OverviewTab({ onJump }) {
 
     // 足りないものを上に、そろっているものを下に
     return out.sort((a, b) => Number(a.ok) - Number(b.ok));
-  }, [lines, corp, basic, baseupAll, subsidies]);
+  }, [lines, corp, basic, baseupAll, subsidies, status]);
 
   const gapCount = gaps.filter((g) => !g.ok).length;
+
+  // 読み込めなかったもの（画面の先頭で断る）
+  const failedLoads = [
+    status.dashboard !== "ok" && status.dashboard !== "empty" ? "経営の月次" : "",
+    status.baseup !== "ok" && status.baseup !== "empty" ? "ベースアップ評価料" : "",
+    status.subsidies !== "ok" && status.subsidies !== "empty" ? "補助金" : "",
+  ].filter(Boolean);
 
   // ── 気になるところ（上から順に手を打つ順番）──
   const alerts = useMemo(() => {
@@ -430,6 +471,48 @@ export default function OverviewTab({ onJump }) {
           {CORP_NAME}｜{corp && corp.cur ? `${ymLabel(corp.cur.ym)}までの数字` : "月次データがまだありません"}
         </div>
       </div>
+
+      {/* 読み込めなかったものがあるときは、まずそれを言う（数字が欠けて見える理由） */}
+      {failedLoads.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            border: `1px solid ${C.down}`,
+            borderLeft: `3px solid ${C.down}`,
+            borderRadius: 4,
+            background: C.downBg,
+            padding: "10px 12px",
+            marginBottom: 14,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ fontWeight: 800, color: C.down }}>！</span>
+          <span style={{ minWidth: 0 }}>
+            <b>{failedLoads.join("・")}</b> を読み込めませんでした。
+            この画面の数字は不完全です（データは消えていません）。
+          </span>
+          <button
+            onClick={() => location.reload()}
+            style={{
+              marginLeft: "auto",
+              font: "inherit",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#fff",
+              background: C.accent,
+              border: "none",
+              borderRadius: 4,
+              padding: "6px 12px",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            再読み込み
+          </button>
+        </div>
+      )}
 
       {/* ── ① 法人の直近月 ── */}
       {corp && corp.cur ? (
@@ -605,7 +688,7 @@ export default function OverviewTab({ onJump }) {
                     <td style={{ padding: "7px 8px", borderBottom: `1px solid ${C.line}`, textAlign: "right" }}>
                       {!g.ok && (
                         <button
-                          onClick={() => onJump && onJump(g.tab)}
+                          onClick={() => (g.reload ? location.reload() : onJump && onJump(g.tab))}
                           style={{
                             font: "inherit",
                             fontWeight: 700,
@@ -618,7 +701,7 @@ export default function OverviewTab({ onJump }) {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          入れる ›
+                          {g.reload ? "再読み込み" : "入れる ›"}
                         </button>
                       )}
                     </td>
@@ -689,9 +772,22 @@ export default function OverviewTab({ onJump }) {
           <ToolCard
             title="補助金管理"
             onClick={() => onJump && onJump("hojokin")}
-            badge={`進行中 ${subsidy.active} 件`}
-            badgeColor={subsidy.active ? C.accent : C.up}
-            rows={[
+            badge={
+              status.subsidies === "ok" || status.subsidies === "empty"
+                ? `進行中 ${subsidy.active} 件`
+                : LOAD_LABEL[status.subsidies]
+            }
+            badgeColor={
+              status.subsidies === "ok" || status.subsidies === "empty"
+                ? subsidy.active
+                  ? C.accent
+                  : C.up
+                : C.down
+            }
+            rows={
+              status.subsidies !== "ok" && status.subsidies !== "empty"
+                ? [["状態", "再読み込みしてください"]]
+                : [
               ["未入金（申請済−振込済）", yen(subsidy.unpaid)],
               ["完了", `${subsidy.done} / ${subsidy.count} 件`],
               [
@@ -702,7 +798,8 @@ export default function OverviewTab({ onJump }) {
                     ? `未申請 ${subsidy.unapplied} 件（期限なし）`
                     : "未申請はありません",
               ],
-            ]}
+                  ]
+            }
           />
         </div>
       </Panel>

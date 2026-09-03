@@ -96,8 +96,21 @@ export const CLOUD_KEYS = {
   dashboard: 'dashboard-overrides',
 } as const
 
-/** クラウドから読んで復号する。無い／読めないときは null（呼び出し側で初期値を使う） */
-export async function cloudLoad<T>(key: string): Promise<T | null> {
+/**
+ * 読み込みの結果。null が返る理由を区別する。
+ *   ok    … 読めた
+ *   empty … まだ1件も保存されていない（＝本当に空）
+ *   error … 通信・サーバ側で失敗した（＝中身は不明。空として扱ってはいけない）
+ *   locked… 復号できない（合言葉違い or 壊れている）
+ */
+export type LoadStatus = 'ok' | 'empty' | 'error' | 'locked'
+
+/**
+ * クラウドから読んで復号し、結果と一緒に「なぜ null なのか」を返す。
+ * 早見表のように「入っていないデータ」を出す画面では、
+ * 読み込み失敗を『0件』と表示してしまうと嘘になるので、この形で受け取る。
+ */
+export async function cloudLoadEx<T>(key: string): Promise<{ data: T | null; status: LoadStatus }> {
   const { data, error } = await supabase
     .from('app_state')
     .select('enc')
@@ -105,14 +118,19 @@ export async function cloudLoad<T>(key: string): Promise<T | null> {
     .maybeSingle()
   if (error) {
     console.error(error)
-    return null
+    return { data: null, status: 'error' }
   }
-  if (!data?.enc) return null
+  if (!data?.enc) return { data: null, status: 'empty' }
   try {
-    return await decryptJSON<T>(data.enc as Enc)
+    return { data: await decryptJSON<T>(data.enc as Enc), status: 'ok' }
   } catch {
-    return null // 合言葉違い or 壊れている
+    return { data: null, status: 'locked' } // 合言葉違い or 壊れている
   }
+}
+
+/** クラウドから読んで復号する。無い／読めないときは null（呼び出し側で初期値を使う） */
+export async function cloudLoad<T>(key: string): Promise<T | null> {
+  return (await cloudLoadEx<T>(key)).data
 }
 
 /** 暗号化してクラウドへ保存する */
