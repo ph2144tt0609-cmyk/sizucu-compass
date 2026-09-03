@@ -1,58 +1,68 @@
 /* sizucu compass ─ デザイントークン
-   会社HP（sizucu.co.jp）の名刺パレット・書体をそのまま引き継ぐ。
-   ネイビー×ペーパー×明朝＋Cormorantイタリック。角はほぼ立てる（HPはカード角丸なし）。 */
+   2026-09-03 改訂：マネーフォワードの見え方に寄せた「はっきり読める」設定へ。
+   ねらいは3つ ①地をグレーにして白いパネルを浮かせる ②文字と罫線のコントラストを上げる
+   ③見出しの明朝＋広い字間をやめてゴシックで詰める（細い横棒と字間が"淡い"の主因だった）。
+   ブランドのネイビーは構造（ヘッダー・見出し）に残し、操作するもの（ボタン・リンク・タブ）は青に統一する。 */
 :root {
-  /* 名刺から忠実抽出（HPと同値） */
-  --navy: #3d4e5e;
-  --navy-deep: #2a3540;
-  --navy-soft: #5a6d7d;
-  --steel: #5a86b2;
-  --blue-pale: #b8c8d4;
-  --blue-mist: #edf2f5;
-  --sage: #c2cfd8;
+  /* ブランド（名刺のネイविー系。文字にも使えるよう一段濃く） */
+  --navy: #2f4459;
+  --navy-deep: #1e2c3a;
+  --navy-soft: #45596d;
+
+  /* 操作の青（＝押せる／選べるものの色） */
+  --accent: #1a6bb0;
+  --accent-d: #135690;
+  --accent-l: #e8f1f9;
+  --steel: #2f6faf;
+  --blue-pale: #a9bccd;
+  --blue-mist: #e9eff5;
+  --sage: #b6c5d1;
 
   /* 店舗カラー（緑ヶ丘=green／鷹匠=orange）とアクセント */
-  --c-green: #8fa83d;
-  --c-orange: #d98f40;
-  --gold: #d9b040;
+  --c-green: #7d9430;
+  --c-orange: #c87c2c;
+  --gold: #c39320;
 
-  /* ベース */
-  --bg: #fbfbf8; /* ペーパー */
+  /* ベース ── 地はグレー、パネルは白。この差が"淡くない"の土台 */
+  --bg: #eef1f4;
+  --bg-deep: #e5eaef;
   --surface: #ffffff;
-  --surface-2: #f7f8f6;
-  --text: #2a3540;
-  --muted: #5a6b76;
-  --faint: #8a98a2;
-  --border: #dde4e8;
-  --border-strong: #c9d3da;
+  --surface-2: #f4f7f9;
+  --text: #1b2836;
+  --muted: #46586a;
+  --faint: #75859a;
+  --border: #d2d9e0;
+  --border-strong: #aeb9c4;
 
-  /* 旧テーマ互換（--primary系は多くの部品が参照するのでネイビーへ張り替え） */
-  --primary: #3d4e5e;
-  --primary-d: #2a3540;
-  --primary-l: #edf2f5;
-  --primary-rgb: 61, 78, 94;
+  /* 旧テーマ互換（--primary系を参照する部品がある） */
+  --primary: #1a6bb0;
+  --primary-d: #135690;
+  --primary-l: #e8f1f9;
+  --primary-rgb: 26, 107, 176;
 
-  /* ステータス色（経営ダッシュボードの up/down と同系に揃える） */
-  --red: #c25454;
-  --red-bg: #f9ecec;
-  --amber: #9a7420;
-  --amber-bg: #faf4e2;
-  --green: #6f8a2c;
-  --green-bg: #f0f4e3;
-  --gray: #8a98a2;
-  --sky: #5a86b2;
-  --sky-bg: #edf2f5;
+  /* ステータス色（いずれも白地でAA＝4.5:1以上になるまで濃くした） */
+  --red: #c0392f;
+  --red-bg: #fbecea;
+  --amber: #8f6b17;
+  --amber-bg: #fbf3df;
+  --green: #4c7a2b;
+  --green-bg: #eef4e6;
+  --gray: #8494a4;
+  --sky: #2f6faf;
+  --sky-bg: #e9eff5;
 
-  /* 影はごく薄く（HPは線で構成する）・角はほぼ立てる */
-  --shadow-sm: 0 1px 2px rgba(42, 53, 64, 0.05);
-  --shadow-md: 0 10px 30px rgba(42, 53, 64, 0.1);
-  --shadow-lg: 0 24px 60px rgba(42, 53, 64, 0.22);
-  --radius: 2px;
-  --radius-sm: 2px;
+  /* 影は「置いてある」程度に薄く、角はほんの少し丸める（MFの4〜6px） */
+  --shadow-sm: 0 1px 2px rgba(27, 40, 54, 0.06);
+  --shadow-md: 0 2px 10px rgba(27, 40, 54, 0.1);
+  --shadow-lg: 0 16px 40px rgba(27, 40, 54, 0.24);
+  --radius: 6px;
+  --radius-sm: 4px;
 
-  /* 書体（HPと同じ） */
-  --serif: 'Noto Serif JP', 'Yu Mincho', '游明朝', serif;
-  --sans: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+  /* 書体 ── 本文・見出し・数字はすべてゴシック。明朝はブランド表記だけに残す */
+  --sans: 'Zen Kaku Gothic New', -apple-system, 'Hiragino Kaku Gothic ProN', 'Yu Gothic',
+    'Meiryo', sans-serif;
+  --head: var(--sans);
+  --mincho: 'Noto Serif JP', 'Yu Mincho', '游明朝', serif;
   --latin: 'Cormorant Garamond', serif;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
@@ -73,25 +83,23 @@ body,
 }
 
 body {
-  /* ペーパー地に、HPのミスト（薄青）を上端からうっすら敷く */
-  background:
-    radial-gradient(135% 46% at 50% -8%, var(--blue-mist) 0%, rgba(237, 242, 245, 0) 62%),
-    var(--bg);
-  background-attachment: fixed;
-  font-size: 15.5px;
-  line-height: 1.7;
+  /* グレーの地（グラデーションは敷かない＝白いパネルの輪郭をぼかさない） */
+  background: var(--bg);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0;
   font-feature-settings: 'palt';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: var(--navy);
+  background: var(--accent);
   color: #fff;
 }
 :focus-visible {
-  outline: 2px solid var(--steel);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 button {
@@ -126,3 +134,4 @@ h2 {
   display: grid;
   place-items: center;
 }
+

@@ -149,27 +149,36 @@ const mdLabel = (md) => {
   return `${m}/${d}`;
 };
 
-// ── 色（コーポレートサイト sizucu.netlify.app の配色に統一）──
+// ── 色 ────────────────────────────────────────────────
+// 2026-09-03：淡くて読みにくかったので、マネーフォワード寄りに作り替えた。
+//   ・文字（ink/sub）は白地で4.5:1以上まで濃くする
+//   ・罫線（border/line）は「透明度10%のネイビー」をやめて、見えるグレーの実線にする
+//   ・押せるもの・選ばれているものは青（accent）ひと色に統一する
 const C = {
-  teal: "#3d4e5e", // ネイビー（メインブランドカラー）
-  tealDeep: "#2a3540", // 濃ネイビー
-  tealBright: "#5a86b2", // スチールブルー（グラデの明側）
-  sage: "#c2cfd8", // ブルーグレー（薄）チャート副系
-  sageDeep: "#a8b8c4", // ブルーグレー
-  amber: "#d9b040", // ゴールド（集中率アクセント）
-  amberSoft: "#efd79a", // ソフトゴールド
-  ink: "#2a3540", // 本文インク
-  sub: "#5a6b76", // サブテキスト
-  up: "#6f8a2c", // グリーン（良化・目標達成）
-  down: "#c25454", // レッド（悪化）
-  line: "#dde4e8", // 罫線
-  bg: "#fbfbf8", // ペーパー（クリーム）
+  teal: "#2f4459", // ネイビー（見出し・帯）
+  tealDeep: "#1e2c3a", // 濃ネイビー
+  tealBright: "#2f6faf", // 青（グラフの明側）
+  accent: "#1a6bb0", // 操作の青（選択中・ボタン）
+  accentD: "#135690",
+  accentL: "#e8f1f9", // 青の淡い面（選択前の下地・タグ）
+  sage: "#b6c5d1", // ブルーグレー（チャート副系）
+  sageDeep: "#93a6b5",
+  amber: "#c39320", // ゴールド（集中率アクセント）
+  amberSoft: "#e3c469",
+  ink: "#1b2836", // 本文インク（濃く）
+  sub: "#46586a", // サブテキスト（濃く）
+  up: "#4c7a2b", // グリーン（良化・目標達成）
+  down: "#c0392f", // レッド（悪化）
+  line: "#d2d9e0", // 罫線
+  head: "#f4f7f9", // 表・カード見出しの帯
+  bg: "#eef1f4", // 地のグレー
   card: "#FFFFFF",
-  border: "rgba(61,78,94,.10)",
+  border: "#d2d9e0", // カードの輪郭（見える線にする）
 };
 
 const FONT_SANS = '"Zen Kaku Gothic New", -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-const FONT_SERIF = '"Noto Serif JP", "Yu Mincho", "游明朝", serif';
+// 見出しもゴシック。明朝の細い横棒＋広い字間が「淡くて読みにくい」の主因だった。
+const FONT_HEAD = FONT_SANS;
 
 const DROP_PATH =
   "M256 150 C 206 240, 160 300, 160 350 A 96 96 0 1 0 352 350 C 352 300, 306 240, 256 150 Z";
@@ -192,14 +201,14 @@ function DropMark({ style }) {
   );
 }
 
-const tintFor = (a) => (a === C.amber ? "#FBF3DC" : a === C.up ? "#EEF3E2" : a === C.teal ? "#EBF0F5" : "#fff");
+// 数字のカードは白のまま（面を塗ると輪郭がぼやける）。系統は左の細い縦線で示す。
 
 function Delta({ cur, prev, invert, unit, light }) {
   if (prev == null) return null;
   const isPt = unit === "pt";
   const d = isPt ? cur - prev : prev ? ((cur - prev) / prev) * 100 : 0;
   const good = invert ? d <= 0 : d >= 0;
-  const color = light ? (good ? "#8BE6C0" : "#FFB7B1") : good ? C.up : C.down;
+  const color = light ? (good ? "#b6e8cd" : "#ffc4bf") : good ? C.up : C.down;
   return (
     <span style={{ color, fontWeight: 700 }}>
       {d >= 0 ? "▲" : "▼"} {Math.abs(d).toFixed(1)}{unit || "%"}
@@ -604,7 +613,7 @@ export default function DashboardTab({ view = "keiei" }) {
           <Logo size={44} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10.5, letterSpacing: 2.5, color: C.teal, fontWeight: 700 }}>株式会社しずく</div>
-            <div style={{ fontFamily: FONT_SERIF, fontSize: 21, fontWeight: 600, letterSpacing: 0.5, lineHeight: 1.2, color: C.ink, whiteSpace: "nowrap" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 21, fontWeight: 600, letterSpacing: 0.5, lineHeight: 1.2, color: C.ink, whiteSpace: "nowrap" }}>
               {view === "kihonryo" ? "調剤基本料 判定" : "経営ダッシュボード"}
             </div>
           </div>
@@ -623,18 +632,18 @@ export default function DashboardTab({ view = "keiei" }) {
         {view === "keiei" && (
         <>
         {/* 薬局・法人セレクタ（セグメント） */}
-        <div style={{ display: "flex", gap: 4, background: "#EDF2F5", borderRadius: 14, padding: 4, border: `1px solid ${C.border}` }}>
-          {[...pharmData.map((p) => p.name), CORP_NAME].map((name, i) => (
+        <div style={{ display: "flex", background: "#fff", borderRadius: 6, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+          {[...pharmData.map((p) => p.name), CORP_NAME].map((name, i, arr) => (
             <button
               key={i}
               onClick={() => selectPharmacy(i)}
               style={{
-                flex: 1, padding: "10px 4px", borderRadius: 10, border: "none",
-                background: i === phIdx ? `linear-gradient(135deg, ${C.teal}, ${C.tealBright})` : "transparent",
+                flex: 1, padding: "11px 4px", borderRadius: 0, border: "none",
+                borderRight: i < arr.length - 1 ? `1px solid ${C.border}` : "none",
+                background: i === phIdx ? C.accent : "#fff",
                 color: i === phIdx ? "#fff" : C.sub,
-                fontWeight: 800, fontSize: 12, lineHeight: 1.25, cursor: "pointer",
-                boxShadow: i === phIdx ? "0 4px 12px rgba(14,124,123,.30)" : "none",
-                transition: "background .15s, box-shadow .15s",
+                fontWeight: 700, fontSize: 12.5, lineHeight: 1.25, cursor: "pointer",
+                transition: "background .15s, color .15s",
               }}
             >
               {name}
@@ -651,12 +660,11 @@ export default function DashboardTab({ view = "keiei" }) {
                 key={y}
                 onClick={() => setYear(y)}
                 style={{
-                  padding: "7px 16px", borderRadius: 999,
-                  border: y === year ? "none" : `1px solid ${C.border}`,
-                  background: y === year ? `linear-gradient(135deg, ${C.teal}, ${C.tealBright})` : "#fff",
+                  padding: "7px 16px", borderRadius: 4,
+                  border: `1px solid ${y === year ? C.accent : C.border}`,
+                  background: y === year ? C.accent : "#fff",
                   color: y === year ? "#fff" : C.sub,
-                  fontWeight: 800, fontSize: 13, cursor: "pointer",
-                  boxShadow: y === year ? "0 3px 10px rgba(14,124,123,.26)" : "0 1px 2px rgba(0,0,0,.04)",
+                  fontWeight: 700, fontSize: 13, cursor: "pointer",
                 }}
               >
                 {y}年度
@@ -665,7 +673,7 @@ export default function DashboardTab({ view = "keiei" }) {
             <button
               onClick={addYear}
               title="新しい年度を追加"
-              style={{ padding: "7px 14px", borderRadius: 999, border: `1px dashed ${C.teal}66`, background: "#EBF0F5", color: C.teal, fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+              style={{ padding: "7px 14px", borderRadius: 4, border: `1px dashed ${C.accent}80`, background: "#e8f1f9", color: C.accentD, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
             >
               ＋年度
             </button>
@@ -686,12 +694,11 @@ export default function DashboardTab({ view = "keiei" }) {
                   onClick={() => setSelPeriod(mp)}
                   title={has ? "" : "データ未登録"}
                   style={{
-                    flex: "0 0 auto", padding: "6px 15px", borderRadius: 999,
-                    border: sel ? "none" : has ? `1px solid ${C.border}` : `1px dashed ${C.line}`,
-                    background: sel ? `linear-gradient(135deg, ${C.teal}, ${C.tealBright})` : has ? "#fff" : "#f3f5f7",
-                    color: sel ? "#fff" : has ? C.sub : "#aeb8c0",
+                    flex: "0 0 auto", padding: "6px 15px", borderRadius: 4,
+                    border: `1px ${has || sel ? "solid" : "dashed"} ${sel ? C.accent : has ? C.border : C.line}`,
+                    background: sel ? C.accent : has ? "#fff" : "#f4f7f9",
+                    color: sel ? "#fff" : has ? C.sub : "#9aa7b3",
                     fontWeight: 700, fontSize: 13, cursor: "pointer",
-                    boxShadow: sel ? "0 3px 10px rgba(14,124,123,.26)" : "0 1px 2px rgba(0,0,0,.04)",
                   }}
                 >
                   {mp}
@@ -712,14 +719,14 @@ export default function DashboardTab({ view = "keiei" }) {
           {!editing ? (
             <button
               onClick={openEditor}
-              style={{ width: "100%", padding: "11px 12px", borderRadius: 12, border: `1px solid ${C.teal}33`, background: "#EBF0F5", color: C.teal, fontWeight: 800, fontSize: 13.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              style={{ width: "100%", padding: "11px 12px", borderRadius: 6, border: "1px solid #c5daed", background: "#e8f1f9", color: C.accentD, fontWeight: 700, fontSize: 13.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
             >
               ✎ {year}年度 {selPeriod} の数字を{cur ? "編集" : "入力"}
             </button>
           ) : (
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 14, background: "#fff", boxShadow: "0 3px 12px rgba(18,48,46,.06)" }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: 14, background: "#fff", boxShadow: "0 1px 2px rgba(27,40,54,.06)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <div style={{ fontFamily: FONT_SERIF, fontSize: 15, fontWeight: 600, color: C.ink }}>{activeName}・{year}年度 {selPeriod} の入力</div>
+                <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: C.ink }}>{activeName}・{year}年度 {selPeriod} の入力</div>
                 <button onClick={() => setEditing(false)} aria-label="閉じる" style={{ border: "none", background: "transparent", color: C.sub, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
               </div>
               {isCorp ? (
@@ -729,7 +736,7 @@ export default function DashboardTab({ view = "keiei" }) {
                   </div>
                   <Field label="人件費（円）" value={form.labor} onChange={(v) => setForm({ ...form, labor: v })} />
                   {!cur && (
-                    <div style={{ fontSize: 11, color: "#8A6321", background: "#FFF7EB", borderRadius: 8, padding: "8px 10px", lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 11, color: "#8f6b17", background: "#fbf3df", borderRadius: 6, padding: "8px 10px", lineHeight: 1.6 }}>
                       ※ この月（{selPeriod}）はまだ各薬局のデータがそろっていません。保存した人件費は、各薬局の数字がそろうと自動で表示されます。
                     </div>
                   )}
@@ -740,19 +747,19 @@ export default function DashboardTab({ view = "keiei" }) {
                   <Field label="他科枚数" value={form.other} onChange={(v) => setForm({ ...form, other: v })} />
                   <Field label="技術料（円）" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
                   <Field label="薬剤料（円）" value={form.drug} onChange={(v) => setForm({ ...form, drug: v })} />
-                  <div style={{ gridColumn: "1 / -1", fontSize: 12, color: C.sub, background: "#f6f8fa", borderRadius: 8, padding: "8px 10px" }}>
+                  <div style={{ gridColumn: "1 / -1", fontSize: 12, color: C.sub, background: "#f4f7f9", borderRadius: 6, padding: "8px 10px" }}>
                     売上（保険合計）＝技術料＋薬剤料＝<b style={{ color: C.ink }}>{yen(toNum(form.tech) + toNum(form.drug))}</b>（自動計算）
                   </div>
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                <button onClick={saveMonth} style={{ flex: 1, minWidth: 120, padding: 12, borderRadius: 11, border: "none", background: `linear-gradient(135deg, ${C.teal}, ${C.tealBright})`, color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "0 4px 12px rgba(14,124,123,.25)" }}>
+                <button onClick={saveMonth} style={{ flex: 1, minWidth: 120, padding: 12, borderRadius: 6, border: "none", background: C.accent, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
                   {selPeriod} を保存する
                 </button>
                 {(cur || (isCorp && corpLabor[year] && corpLabor[year][selPeriod] != null)) && (
-                  <button onClick={deleteMonth} style={{ padding: "12px 14px", borderRadius: 11, border: `1px solid ${C.down}55`, background: "#fff", color: C.down, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>この月を削除</button>
+                  <button onClick={deleteMonth} style={{ padding: "12px 14px", borderRadius: 6, border: `1px solid ${C.down}55`, background: "#fff", color: C.down, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>この月を削除</button>
                 )}
-                <button onClick={() => setEditing(false)} style={{ padding: "12px 14px", borderRadius: 11, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>キャンセル</button>
+                <button onClick={() => setEditing(false)} style={{ padding: "12px 14px", borderRadius: 6, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>キャンセル</button>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 9 }}>
                 <div style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5 }}>※ 入力はこのブラウザ（端末）に保存されます。別の端末には反映されません。</div>
@@ -766,7 +773,7 @@ export default function DashboardTab({ view = "keiei" }) {
 
         {/* 年度にデータが1件も無い場合の案内 */}
         {!hasYearData && !editing && (
-          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 18px", margin: "0 0 14px", textAlign: "center", boxShadow: "0 3px 12px rgba(18,48,46,.05)" }}>
+          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 6, padding: "20px 18px", margin: "0 0 14px", textAlign: "center", boxShadow: "0 1px 2px rgba(27,40,54,.06)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.ink, marginBottom: 6 }}>
               「{activeName}・{year}年度」のデータはまだありません
             </div>
@@ -781,14 +788,14 @@ export default function DashboardTab({ view = "keiei" }) {
         {hasYearData && (
           <>
             {/* 比較ベース切替（前月比 / 前年同期比） */}
-            <div style={{ display: "flex", gap: 4, background: "#EDF2F5", borderRadius: 12, padding: 3, border: `1px solid ${C.border}`, margin: "0 0 12px" }}>
+            <div style={{ display: "flex", background: "#fff", borderRadius: 6, border: `1px solid ${C.border}`, overflow: "hidden", margin: "0 0 12px" }}>
               {[["mom", "前月比"], ["yoy", "前年同期比"]].map(([m, label]) => (
                 <button
                   key={m}
                   onClick={() => setCmpMode(m)}
                   style={{
-                    flex: 1, padding: "7px 4px", borderRadius: 9, border: "none",
-                    background: cmpMode === m ? `linear-gradient(135deg, ${C.teal}, ${C.tealBright})` : "transparent",
+                    flex: 1, padding: "7px 4px", borderRadius: 6, border: "none",
+                    background: cmpMode === m ? C.accent : "#fff",
                     color: cmpMode === m ? "#fff" : C.sub,
                     fontWeight: 700, fontSize: 12, cursor: "pointer",
                   }}
@@ -799,7 +806,7 @@ export default function DashboardTab({ view = "keiei" }) {
             </div>
 
             {yoyMissing && (
-              <div style={{ background: "#FFF7EB", border: `1px solid ${C.amber}33`, borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#8A6321", lineHeight: 1.6 }}>
+              <div style={{ background: "#fbf3df", border: `1px solid ${C.amber}33`, borderRadius: 6, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#8f6b17", lineHeight: 1.6 }}>
                 「{activeName}・{cur.period}」の<b>前年度（{prevYearLabel}年度）データがありません</b>。前年度のデータが入ると前年同期比が表示されます。
               </div>
             )}
@@ -808,7 +815,7 @@ export default function DashboardTab({ view = "keiei" }) {
             {cur ? (
               <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: isDesktop ? 14 : 0, alignItems: "start", marginBottom: isDesktop ? 14 : 0 }}>
                 {/* メインKPI：売上（ヒーロー） */}
-                <div style={{ position: "relative", overflow: "hidden", background: `linear-gradient(135deg, ${C.tealDeep} 0%, ${C.teal} 58%, ${C.tealBright} 135%)`, borderRadius: 22, padding: "20px 20px 18px", color: "#fff", marginBottom: isDesktop ? 0 : 14, boxShadow: "0 12px 32px rgba(10,92,91,.30)" }}>
+                <div style={{ position: "relative", overflow: "hidden", background: C.teal, borderRadius: 6, padding: "20px 20px 18px", color: "#fff", marginBottom: isDesktop ? 0 : 14, boxShadow: "0 2px 10px rgba(27,40,54,.16)" }}>
                   <DropMark style={{ position: "absolute", right: -34, bottom: -46, width: 210, height: 210, opacity: 0.08, transform: "rotate(8deg)" }} />
                   <div style={{ position: "absolute", inset: 0, background: "radial-gradient(75% 50% at 82% 0%, rgba(255,255,255,.18), transparent 60%)", pointerEvents: "none" }} />
                   <div style={{ position: "relative" }}>
@@ -826,7 +833,7 @@ export default function DashboardTab({ view = "keiei" }) {
                         { l: "薬剤料", v: man(cur.drug) },
                         { l: "技術料率", v: pct(cur.techRate) },
                       ].map((m) => (
-                        <div key={m.l} style={{ flex: 1, background: "rgba(255,255,255,.12)", borderRadius: 12, padding: "9px 10px" }}>
+                        <div key={m.l} style={{ flex: 1, background: "rgba(255,255,255,.12)", borderRadius: 6, padding: "9px 10px" }}>
                           <div style={{ opacity: 0.82, fontSize: 11 }}>{m.l}</div>
                           <div style={{ fontSize: 15.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginTop: 1 }}>{m.v}</div>
                         </div>
@@ -844,7 +851,7 @@ export default function DashboardTab({ view = "keiei" }) {
                 </div>
               </div>
             ) : (
-              <div style={{ background: "#fff", border: `1px dashed ${C.line}`, borderRadius: 18, padding: "22px 18px", textAlign: "center", marginBottom: 14, boxShadow: "0 3px 12px rgba(18,48,46,.04)" }}>
+              <div style={{ background: "#fff", border: `1px dashed ${C.line}`, borderRadius: 6, padding: "22px 18px", textAlign: "center", marginBottom: 14, boxShadow: "0 1px 2px rgba(27,40,54,.06)" }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{selPeriod}のデータはまだありません</div>
                 <div style={{ fontSize: 12.5, color: C.sub, marginTop: 6, lineHeight: 1.6 }}>
                   上の「✎ {selPeriod} の数字を入力」から登録できます。<br />下のグラフ・月平均は登録済みの月をもとに表示しています。
@@ -853,9 +860,9 @@ export default function DashboardTab({ view = "keiei" }) {
             )}
 
             {/* 年間サマリー（月平均） */}
-            <div style={{ background: `linear-gradient(180deg, #EBF0F5 0%, #fff 72%)`, borderRadius: 16, padding: "14px 15px", margin: "0 0 16px", border: `1px solid ${C.border}`, boxShadow: "0 3px 12px rgba(18,48,46,.05)" }}>
+            <div style={{ background: "#fff", borderRadius: 6, padding: "14px 15px", margin: "0 0 16px", border: `1px solid ${C.border}`, boxShadow: "0 1px 2px rgba(27,40,54,.06)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 11 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 600, color: C.ink, fontFamily: FONT_SERIF }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 600, color: C.ink, fontFamily: FONT_HEAD }}>
                   <span style={{ width: 7, height: 7, borderRadius: 999, background: C.teal, flex: "0 0 auto" }} />
                   {year}年度の月平均（{activeName}）
                 </div>
@@ -867,7 +874,7 @@ export default function DashboardTab({ view = "keiei" }) {
                   { l: "月平均 売上", v: man(avgSales), accent: C.up },
                   { l: "月平均 他科枚数", v: mai(avgOther), accent: C.amber },
                 ].map((m) => (
-                  <div key={m.l} style={{ background: "#fff", borderRadius: 12, padding: "10px 11px", border: `1px solid ${m.accent}22` }}>
+                  <div key={m.l} style={{ background: "#fff", borderRadius: 6, padding: "10px 11px", border: `1px solid ${m.accent}22` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: C.sub, fontWeight: 700, lineHeight: 1.3 }}>
                       <span style={{ width: 5, height: 5, borderRadius: 999, background: m.accent, flex: "0 0 auto" }} />
                       {m.l}
@@ -890,9 +897,9 @@ export default function DashboardTab({ view = "keiei" }) {
             )}
 
             {/* 他科処方箋の目標管理（総処方箋枚数の15%以上） */}
-            <div style={{ background: `linear-gradient(180deg, ${otherAchieved ? "#EEF3E2" : "#FBF3DC"} 0%, #fff 70%)`, borderRadius: 16, padding: "14px 15px", marginBottom: 16, border: `1px solid ${(otherAchieved ? C.up : C.amber)}33`, boxShadow: "0 3px 12px rgba(18,48,46,.05)" }}>
+            <div style={{ background: "#fff", borderRadius: 6, padding: "14px 15px", marginBottom: 16, border: `1px solid ${C.border}`, borderLeft: `3px solid ${otherAchieved ? C.up : C.amber}`, boxShadow: "0 1px 2px rgba(27,40,54,.06)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 600, color: C.ink, fontFamily: FONT_SERIF }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 600, color: C.ink, fontFamily: FONT_HEAD }}>
                   <span style={{ width: 7, height: 7, borderRadius: 999, background: otherAchieved ? C.up : C.amber, flex: "0 0 auto" }} />
                   他科処方箋の目標（15%以上）{focus && <span style={{ fontSize: 11, color: C.sub, fontWeight: 700, fontFamily: FONT_SANS }}>／{focus.period}</span>}
                 </div>
@@ -914,8 +921,8 @@ export default function DashboardTab({ view = "keiei" }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontVariantNumeric: "tabular-nums" }}>{focus ? `${mai(focus.other)} / ${mai(focus.total)}` : "—"}</div>
                 </div>
               </div>
-              <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#e4ebef", overflow: "hidden" }}>
-                <div style={{ width: `${otherProgress * 100}%`, height: "100%", borderRadius: 999, background: otherAchieved ? `linear-gradient(90deg, ${C.up}, #a6c24e)` : `linear-gradient(90deg, ${C.amber}, ${C.amberSoft})`, transition: "width .3s" }} />
+              <div style={{ position: "relative", height: 8, borderRadius: 999, background: "#dfe6ec", overflow: "hidden" }}>
+                <div style={{ width: `${otherProgress * 100}%`, height: "100%", borderRadius: 999, background: otherAchieved ? C.up : C.amber, transition: "width .3s" }} />
               </div>
               <div style={{ fontSize: 10.5, color: C.sub, marginTop: 7, lineHeight: 1.5 }}>
                 総処方箋の15%以上を他科で確保するのが目標。バーは目標（15%）に対する達成度です。
@@ -938,9 +945,9 @@ export default function DashboardTab({ view = "keiei" }) {
                         key={i}
                         onClick={() => setSelPeriod(d.period)}
                         style={{
-                          flex: "0 0 auto", minWidth: 58, padding: "7px 8px", borderRadius: 11, cursor: "pointer",
+                          flex: "0 0 auto", minWidth: 58, padding: "7px 8px", borderRadius: 6, cursor: "pointer",
                           border: d.period === selPeriod ? `1.5px solid ${ok ? C.up : C.amber}` : `1px solid ${C.line}`,
-                          background: ok ? "#EEF3E2" : "#fff", textAlign: "center",
+                          background: ok ? "#eef4e6" : "#fff", textAlign: "center",
                         }}
                       >
                         <div style={{ fontSize: 11, fontWeight: 700, color: C.sub }}>{d.period}</div>
@@ -975,7 +982,7 @@ export default function DashboardTab({ view = "keiei" }) {
                     <CartesianGrid stroke={C.line} vertical={false} />
                     <XAxis dataKey="period" tick={{ fontSize: 11, fill: C.sub }} tickLine={false} axisLine={false} interval={xInterval} />
                     <YAxis tickFormatter={man} tick={{ fontSize: 10, fill: C.sub }} tickLine={false} axisLine={false} width={56} />
-                    <Tooltip formatter={(v, n) => [yen(v), n]} contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
+                    <Tooltip formatter={(v, n) => [yen(v), n]} contentStyle={{ borderRadius: 6, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
                     <Bar name="技術料" dataKey="tech" stackId="s" fill="url(#gTech)" maxBarSize={24} radius={[0, 0, 0, 0]} />
                     <Bar name="薬剤料" dataKey="drug" stackId="s" fill="url(#gDrug)" maxBarSize={24} radius={[4, 4, 0, 0]} />
                   </ComposedChart>
@@ -995,7 +1002,7 @@ export default function DashboardTab({ view = "keiei" }) {
                     <XAxis dataKey="period" tick={{ fontSize: 11, fill: C.sub }} tickLine={false} axisLine={false} interval={xInterval} />
                     <YAxis yAxisId="l" tick={{ fontSize: 10, fill: C.sub }} tickLine={false} axisLine={false} width={36} />
                     <YAxis yAxisId="r" orientation="right" domain={[60, 100]} tickFormatter={(v) => v + "%"} tick={{ fontSize: 10, fill: C.amber }} tickLine={false} axisLine={false} width={36} />
-                    <Tooltip formatter={(v, n) => [n === "集中率" ? v.toFixed(1) + "%" : v.toLocaleString("ja-JP") + "枚", n]} contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
+                    <Tooltip formatter={(v, n) => [n === "集中率" ? v.toFixed(1) + "%" : v.toLocaleString("ja-JP") + "枚", n]} contentStyle={{ borderRadius: 6, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
                     <Bar yAxisId="l" name="処方箋枚数" dataKey="total" fill="url(#gTotal)" radius={[4, 4, 0, 0]} maxBarSize={22} />
                     <Line yAxisId="r" name="集中率" dataKey="concentration" stroke={C.amber} strokeWidth={2.5} dot={{ r: 2.5, fill: C.amber }} activeDot={{ r: 4 }} />
                   </ComposedChart>
@@ -1008,7 +1015,7 @@ export default function DashboardTab({ view = "keiei" }) {
                     <CartesianGrid stroke={C.line} vertical={false} />
                     <XAxis dataKey="period" tick={{ fontSize: 11, fill: C.sub }} tickLine={false} axisLine={false} interval={xInterval} />
                     <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10, fill: C.sub }} tickLine={false} axisLine={false} width={42} />
-                    <Tooltip formatter={(v, n) => [v.toFixed(1) + "%", n]} contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
+                    <Tooltip formatter={(v, n) => [v.toFixed(1) + "%", n]} contentStyle={{ borderRadius: 6, border: "none", boxShadow: "0 4px 14px rgba(0,0,0,.1)", fontSize: 12 }} />
                     <Line name="技術料率" dataKey="techRate" stroke={C.teal} strokeWidth={2.5} dot={{ r: 2.5, fill: C.teal }} activeDot={{ r: 4 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1026,10 +1033,10 @@ export default function DashboardTab({ view = "keiei" }) {
                 const k = docKey(pharmacy, doctor);
                 const isOpen = openDoctor === k;
                 return (
-                  <div key={k} style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 12px", background: "#fff" }}>
+                  <div key={k} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "11px 12px", background: "#fff" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 999, background: "#EBF0F5", color: C.teal, fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>医</span>
+                        <span style={{ width: 26, height: 26, borderRadius: 999, background: "#e8f1f9", color: C.teal, fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>医</span>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ink }}>{doctor}</div>
                           {activeName !== pharmacy && <div style={{ fontSize: 10.5, color: C.sub }}>{pharmacy}</div>}
@@ -1041,7 +1048,7 @@ export default function DashboardTab({ view = "keiei" }) {
                           type="date"
                           value={info.birthday ? `2000-${info.birthday}` : ""}
                           onChange={(e) => setBirthday(pharmacy, doctor, e.target.value ? e.target.value.slice(5) : "")}
-                          style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "3px 6px", fontSize: 11, color: C.ink }}
+                          style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", fontSize: 11, color: C.ink }}
                         />
                       </div>
                     </div>
@@ -1060,15 +1067,15 @@ export default function DashboardTab({ view = "keiei" }) {
 
                     {isOpen ? (
                       <div style={{ marginTop: 9, borderTop: `1px solid ${C.line}`, paddingTop: 9, display: "grid", gap: 7 }}>
-                        <input type="date" value={mtgDate} onChange={(e) => setMtgDate(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 12 }} />
-                        <textarea value={mtgNote} onChange={(e) => setMtgNote(e.target.value)} placeholder="面会内容（例：在宅の相談、新規採用薬の説明 など）" style={{ minHeight: 56, border: `1px solid ${C.line}`, borderRadius: 8, padding: 8, fontSize: 12, resize: "vertical", boxSizing: "border-box" }} />
+                        <input type="date" value={mtgDate} onChange={(e) => setMtgDate(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12 }} />
+                        <textarea value={mtgNote} onChange={(e) => setMtgNote(e.target.value)} placeholder="面会内容（例：在宅の相談、新規採用薬の説明 など）" style={{ minHeight: 56, border: `1px solid ${C.line}`, borderRadius: 6, padding: 8, fontSize: 12, resize: "vertical", boxSizing: "border-box" }} />
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => addMeeting(pharmacy, doctor)} style={{ flex: 1, padding: 9, borderRadius: 9, border: "none", background: `linear-gradient(135deg, ${C.teal}, ${C.tealBright})`, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>記録する</button>
-                          <button onClick={() => { setOpenDoctor(null); setMtgNote(""); }} style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>閉じる</button>
+                          <button onClick={() => addMeeting(pharmacy, doctor)} style={{ flex: 1, padding: 9, borderRadius: 6, border: "none", background: C.accent, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>記録する</button>
+                          <button onClick={() => { setOpenDoctor(null); setMtgNote(""); }} style={{ padding: "9px 14px", borderRadius: 6, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>閉じる</button>
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => { setOpenDoctor(k); setMtgDate(todayISO()); setMtgNote(""); }} style={{ marginTop: 9, width: "100%", padding: "8px", borderRadius: 9, border: `1px dashed ${C.teal}66`, background: "#EBF0F5", color: C.teal, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>＋ 面会記録を追加</button>
+                      <button onClick={() => { setOpenDoctor(k); setMtgDate(todayISO()); setMtgNote(""); }} style={{ marginTop: 9, width: "100%", padding: "8px", borderRadius: 6, border: `1px dashed ${C.teal}66`, background: "#e8f1f9", color: C.teal, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>＋ 面会記録を追加</button>
                     )}
                   </div>
                 );
@@ -1081,7 +1088,7 @@ export default function DashboardTab({ view = "keiei" }) {
               <div style={{ display: "grid", gap: 7 }}>
                 {calendar.length === 0 && <div style={{ fontSize: 12, color: C.sub }}>イベントがありません。下から追加できます。</div>}
                 {calendar.map((it) => (
-                  <div key={it.kind + it.id + it.md} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.line}`, borderRadius: 11, padding: "9px 11px" }}>
+                  <div key={it.kind + it.id + it.md} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.line}`, borderRadius: 6, padding: "9px 11px" }}>
                     <div style={{ flex: "0 0 auto", width: 40, textAlign: "center" }}>
                       <div style={{ fontSize: 9.5, color: C.sub, fontWeight: 700 }}>{it.kind === "birthday" ? "誕生日" : "予定"}</div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: it.kind === "birthday" ? C.amber : C.teal, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{mdLabel(it.md)}</div>
@@ -1099,17 +1106,17 @@ export default function DashboardTab({ view = "keiei" }) {
               </div>
 
               {showAddEvent ? (
-                <div style={{ marginTop: 9, border: `1px solid ${C.line}`, borderRadius: 11, padding: 11, display: "grid", gap: 7 }}>
-                  <input value={evTitle} onChange={(e) => setEvTitle(e.target.value)} placeholder="イベント名（例：お盆休み、医師会総会 など）" style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 9px", fontSize: 12 }} />
-                  <input type="date" value={evDate} onChange={(e) => setEvDate(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 9px", fontSize: 12 }} />
+                <div style={{ marginTop: 9, border: `1px solid ${C.line}`, borderRadius: 6, padding: 11, display: "grid", gap: 7 }}>
+                  <input value={evTitle} onChange={(e) => setEvTitle(e.target.value)} placeholder="イベント名（例：お盆休み、医師会総会 など）" style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px", fontSize: 12 }} />
+                  <input type="date" value={evDate} onChange={(e) => setEvDate(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px", fontSize: 12 }} />
                   <div style={{ fontSize: 10.5, color: C.sub }}>※ 毎年この月日にくり返します（年は無視されます）</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={addEvent} style={{ flex: 1, padding: 9, borderRadius: 9, border: "none", background: `linear-gradient(135deg, ${C.teal}, ${C.tealBright})`, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>追加する</button>
-                    <button onClick={() => setShowAddEvent(false)} style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>閉じる</button>
+                    <button onClick={addEvent} style={{ flex: 1, padding: 9, borderRadius: 6, border: "none", background: C.accent, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>追加する</button>
+                    <button onClick={() => setShowAddEvent(false)} style={{ padding: "9px 14px", borderRadius: 6, border: `1px solid ${C.line}`, background: "#fff", color: C.sub, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>閉じる</button>
                   </div>
                 </div>
               ) : (
-                <button onClick={() => setShowAddEvent(true)} style={{ marginTop: 9, width: "100%", padding: "8px", borderRadius: 9, border: `1px dashed ${C.teal}66`, background: "#EBF0F5", color: C.teal, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>＋ イベントを追加</button>
+                <button onClick={() => setShowAddEvent(true)} style={{ marginTop: 9, width: "100%", padding: "8px", borderRadius: 6, border: `1px dashed ${C.teal}66`, background: "#e8f1f9", color: C.teal, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>＋ イベントを追加</button>
               )}
               <div style={{ fontSize: 10.5, color: C.sub, marginTop: 8, lineHeight: 1.5 }}>
                 医師の誕生日は「医師面会記録」で各医師の誕生日を設定すると、ここに自動で表示されます。
@@ -1146,10 +1153,10 @@ export default function DashboardTab({ view = "keiei" }) {
 function SyncBadge({ status }) {
   const map = {
     loading: { t: "同期中…", c: C.sub, bg: "#eef2f5" },
-    saving: { t: "保存中…", c: C.teal, bg: "#EBF0F5" },
-    synced: { t: "☁ 同期済み", c: C.up, bg: "#EEF3E2" },
-    offline: { t: "⚠ オフライン", c: "#8A6321", bg: "#FFF7EB" },
-    error: { t: "⚠ 同期失敗", c: C.down, bg: "#FBEBEB" },
+    saving: { t: "保存中…", c: C.teal, bg: "#e8f1f9" },
+    synced: { t: "☁ 同期済み", c: C.up, bg: "#eef4e6" },
+    offline: { t: "⚠ オフライン", c: "#8f6b17", bg: "#fbf3df" },
+    error: { t: "⚠ 同期失敗", c: C.down, bg: "#fbecea" },
   };
   const m = map[status];
   if (!m) return null;
@@ -1174,11 +1181,11 @@ function NavArrow({ dir, onClick, disabled, label }) {
       style={{
         flex: "0 0 auto", width: 34, height: 34, borderRadius: 999,
         border: `1px solid ${disabled ? C.line : C.border}`,
-        background: disabled ? "#f3f5f7" : "#fff",
-        color: disabled ? "#c3ccd3" : C.teal,
+        background: disabled ? "#f4f7f9" : "#fff",
+        color: disabled ? "#a9b4bf" : C.teal,
         fontSize: 18, fontWeight: 800, lineHeight: 1,
         cursor: disabled ? "default" : "pointer",
-        boxShadow: disabled ? "none" : "0 1px 3px rgba(0,0,0,.06)",
+        boxShadow: disabled ? "none" : "none",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}
     >
@@ -1196,7 +1203,7 @@ function Field({ label, value, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         inputMode="numeric"
         placeholder="0"
-        style={{ width: "100%", height: 42, border: `1px solid ${C.line}`, borderRadius: 10, padding: "0 11px", fontSize: 16, fontVariantNumeric: "tabular-nums", boxSizing: "border-box", background: "#fff", color: C.ink }}
+        style={{ width: "100%", height: 42, border: `1px solid ${C.line}`, borderRadius: 6, padding: "0 11px", fontSize: 16, fontVariantNumeric: "tabular-nums", boxSizing: "border-box", background: "#fff", color: C.ink }}
       />
     </label>
   );
@@ -1206,18 +1213,19 @@ function Kpi({ label, value, sub, delta, accent, wide }) {
   return (
     <div
       style={{
-        background: accent ? `linear-gradient(180deg, ${tintFor(accent)} 0%, #fff 72%)` : "#fff",
-        borderRadius: 16, padding: "13px 14px",
-        boxShadow: "0 3px 12px rgba(18,48,46,.05)",
-        border: `1px solid ${accent ? accent + "26" : C.border}`,
+        background: "#fff",
+        borderRadius: 6,
+        padding: "12px 14px",
+        boxShadow: "0 1px 2px rgba(27,40,54,.06)",
+        border: `1px solid ${C.border}`,
+        borderLeft: `3px solid ${accent || C.sage}`,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.sub, fontWeight: 700 }}>
-        {accent && <span style={{ width: 6, height: 6, borderRadius: 999, background: accent, flex: "0 0 auto" }} />}
         {label}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ fontSize: wide ? 25 : 20, fontWeight: 800, marginTop: 4, fontVariantNumeric: "tabular-nums", letterSpacing: 0.2 }}>{value}</div>
+        <div style={{ fontSize: wide ? 27 : 22, fontWeight: 800, marginTop: 2, color: C.ink, fontVariantNumeric: "tabular-nums", letterSpacing: 0 }}>{value}</div>
         {wide && <span style={{ fontSize: 12 }}>{delta}</span>}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 3, fontSize: 11 }}>
@@ -1230,12 +1238,12 @@ function Kpi({ label, value, sub, delta, accent, wide }) {
 
 function Card({ title, children, flush }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 18, padding: "15px 12px 8px", marginBottom: flush ? 0 : 13, boxShadow: "0 3px 14px rgba(18,48,46,.05)", border: `1px solid ${C.border}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: C.ink, padding: "0 4px 9px", fontFamily: FONT_SERIF }}>
-        <span style={{ width: 3, height: 14, borderRadius: 2, background: `linear-gradient(${C.tealBright}, ${C.teal})`, flex: "0 0 auto" }} />
+    <div style={{ background: "#fff", borderRadius: 6, marginBottom: flush ? 0 : 13, boxShadow: "0 1px 2px rgba(27,40,54,.06)", border: `1px solid ${C.border}`, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 700, color: C.ink, padding: "9px 13px", background: C.head, borderBottom: `1px solid ${C.border}`, fontFamily: FONT_HEAD }}>
+        <span style={{ width: 3, height: 14, borderRadius: 2, background: C.accent, flex: "0 0 auto" }} />
         {title}
       </div>
-      {children}
+      <div style={{ padding: "13px 12px 8px" }}>{children}</div>
     </div>
   );
 }

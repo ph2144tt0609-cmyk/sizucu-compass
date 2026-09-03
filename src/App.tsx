@@ -36,59 +36,69 @@ function Main() {
   const [migrating, setMigrating] = useState(false)
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <h1 className="brand">
-          <img
-            className="brand-logo"
-            src={import.meta.env.BASE_URL + 'sizucu-logo-color.png'}
-            alt="株式会社しずく ロゴ"
-          />
-          <span className="brand-text">
-            <span className="brand-name">sizucu compass</span>
-            <span className="brand-sub">経営の羅針盤</span>
-          </span>
-        </h1>
-        <div className="topbar-right">
-          <button className="btn-ghost" onClick={() => setMigrating(true)}>
-            以前のデータを取り込む
-          </button>
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              clearPass()
-              location.reload()
-            }}
-          >
-            合言葉を入れ直す
-          </button>
-        </div>
-      </header>
+    <>
+      {/* 画面の一番上に置く帯（ヘッダー＋タブ）。ページ幅いっぱいに敷いて、
+          その中身だけを 1200px の本文幅に合わせる＝マネーフォワードと同じ構え。 */}
+      <div className="appbar">
+        <header className="topbar">
+          <div className="bar-inner">
+            <h1 className="brand">
+              <img
+                className="brand-logo"
+                src={import.meta.env.BASE_URL + 'sizucu-logo-color.png'}
+                alt="株式会社しずく ロゴ"
+              />
+              <span className="brand-text">
+                <span className="brand-name">sizucu compass</span>
+                <span className="brand-sub">経営の羅針盤</span>
+              </span>
+            </h1>
+            <div className="topbar-right">
+              <button className="btn-ghost" onClick={() => setMigrating(true)}>
+                以前のデータを取り込む
+              </button>
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  clearPass()
+                  location.reload()
+                }}
+              >
+                合言葉を入れ直す
+              </button>
+            </div>
+          </div>
+        </header>
 
-      <nav className="tabbar">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={'tab' + (tab === t.key ? ' tab-active' : '')}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+        <nav className="tabbar">
+          <div className="bar-inner">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                className={'tab' + (tab === t.key ? ' tab-active' : '')}
+                onClick={() => setTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
-      {/* 経営ダッシュボードと調剤基本料 判定は同じ土台（同じ月次データ）を使うので、
-          同じ位置に DashboardTab を置いて view だけ切り替える（タブ往復で読み直しが起きない）。 */}
-      {tab === 'dashboard' || tab === 'kihonryo' ? (
-        <DashboardTab view={tab === 'kihonryo' ? 'kihonryo' : 'keiei'} />
-      ) : tab === 'baseup' ? (
-        <BaseupTab />
-      ) : (
-        <SubsidiesTab />
-      )}
+      <div className="app">
+        {/* 経営ダッシュボードと調剤基本料 判定は同じ土台（同じ月次データ）を使うので、
+            同じ位置に DashboardTab を置いて view だけ切り替える（タブ往復で読み直しが起きない）。 */}
+        {tab === 'dashboard' || tab === 'kihonryo' ? (
+          <DashboardTab view={tab === 'kihonryo' ? 'kihonryo' : 'keiei'} />
+        ) : tab === 'baseup' ? (
+          <BaseupTab />
+        ) : (
+          <SubsidiesTab />
+        )}
 
-      {migrating && <Migrate onClose={() => setMigrating(false)} />}
-    </div>
+        {migrating && <Migrate onClose={() => setMigrating(false)} />}
+      </div>
+    </>
   )
 }
 
