@@ -127,8 +127,10 @@ export default function OverviewTab({ onJump }) {
   // 直近12か月の流れ（1点の数字より、上がっているのか下がっているのかが分かる）
   const trend = useMemo(() => {
     if (!corp) return [];
+    // 目盛りには年も入れる（未入力の月が抜けると「4月→10月」のように飛ぶので、
+    // 月だけだと同じ月が2回出ているように見えてしまう）
     return corp.ser.slice(-12).map((r) => ({
-      label: `${Number(r.ym.slice(5, 7))}月`,
+      label: `${r.ym.slice(2, 4)}/${Number(r.ym.slice(5, 7))}`,
       売上: r.sales,
       処方箋枚数: r.total,
     }));
@@ -290,7 +292,7 @@ export default function OverviewTab({ onJump }) {
 
       {/* ── ①-2 直近12か月の流れ（数字1点ではなく傾きを見る） ── */}
       {trend.length > 1 && (
-        <Panel title="法人の売上と処方箋枚数（直近12か月）" sub="棒＝売上／線＝処方箋枚数">
+        <Panel title="法人の売上と処方箋枚数（直近12か月ぶん）" sub="棒＝売上／線＝処方箋枚数">
           <div style={{ height: 190 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={trend} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
