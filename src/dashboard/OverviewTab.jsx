@@ -143,7 +143,12 @@ export default function OverviewTab({ onJump }) {
       const m = migrateBaseup(b.data);
       setBstate(m ? m.state : defaultState());
       setSubsidies(Array.isArray(s.data) ? s.data : []);
-      setStatus({ dashboard: o.status, baseup: b.status, subsidies: s.status });
+      setStatus({
+        dashboard: o.status,
+        dashboardLocal: !!o.usedLocal, // クラウドは駄目でも端末の控えで出せている
+        baseup: b.status,
+        subsidies: s.status,
+      });
       setLoading(false);
     })();
     return () => {
@@ -245,7 +250,15 @@ export default function OverviewTab({ onJump }) {
       detail: "通信の状態を確かめて、画面を再読み込みしてください（データは消えていません）",
       reload: true, // タブへ飛んでも直らないので、行の操作は「再読み込み」にする
     });
-    if (badLoad(status.dashboard)) out.push(loadRow("dashboard", "経営の月次", status.dashboard));
+    if (badLoad(status.dashboard)) {
+      const row = loadRow("dashboard", "経営の月次", status.dashboard);
+      if (status.dashboardLocal) {
+        // クラウドは読めなかったが、この端末に控えがあるのでそれで出している
+        row.state = "クラウドに繋がりません";
+        row.detail = "この端末に保存されている内容で表示しています（他の端末での入力は反映されていないかもしれません）";
+      }
+      out.push(row);
+    }
 
     // ① 薬局ごとの月次（最初に入力した月〜先月 のあいだで抜けている月）
     lines
@@ -491,7 +504,10 @@ export default function OverviewTab({ onJump }) {
           <span style={{ fontWeight: 800, color: C.down }}>！</span>
           <span style={{ minWidth: 0 }}>
             <b>{failedLoads.join("・")}</b> を読み込めませんでした。
-            この画面の数字は不完全です（データは消えていません）。
+            {status.dashboardLocal && status.dashboard !== "ok"
+              ? "経営の数字はこの端末の控えで表示しています。"
+              : "この画面の数字は不完全です。"}
+            （データは消えていません）
           </span>
           <button
             onClick={() => location.reload()}
