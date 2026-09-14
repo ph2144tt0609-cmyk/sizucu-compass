@@ -96,3 +96,26 @@ sticky ヘッダーが途中に描かれ上が空白になる＝合成の不具�
 - `loadOverridesMerged`（pharmModel.js）も `{ ov, status, usedLocal }` を返す形にした
 - 受付回数は `dashboardReceipts.ts` から切り出した **`buildReceipts(ov)`**（通信しない純関数）で、
   早見表がすでに読んだ override から組み立てる＝同じキーを2回読みに行かない
+
+---
+
+## クラウドを読めなかったときは、全タブ同じ扱い（2026-09-14）
+
+**2026-09-14 に Supabase が一時停止（無料プランの7日間無アクセス）し、補助金管理が空欄・ベースアップ評価料がひな形で表示された。**
+タブごとに失敗時の出し方がバラバラで、しかも**空やひな形のまま保存するとクラウドの本物を上書きできる**状態だったので揃えた。
+
+- 読み込みは全タブ `src/cloud.ts` の **`loadGuarded(key)`** を通す。返り値の `readOnly` が true なら保存させない
+  - `ok` → クラウドの中身・編集可 ／ `empty` → 本当に初回・編集可
+  - `error`/`locked` → **端末の控え**（最後に読み書きできた時点の暗号文を localStorage `sizucu-compass-cache:<key>` に保存）を表示。控えも無ければ中身なし。どちらも読み取り専用
+  - 控えは `cloudLoadEx` 成功時と `cloudSave` 成功時に自動で書く。**暗号文のまま**置く（合言葉なしでは読めない＝クラウドと同じ守り方）
+- 画面は `src/components/LoadBanner.tsx` の赤帯（何を見ているか・いつ時点か・いまは保存できない・データは消えていない・再読み込み）
+- 編集しようとしたら `src/loadNotice.ts` の `makeBlockedNotice()` が**最初の1回だけ** alert（入力のたびに出さない）
+- 各タブの止め方：補助金＝`persist`/`handleSave` 等の先頭で止め、編集画面は閉じない（入力が消えないように）・＋新規追加は disabled ／
+  ベースアップ＝`onChange` を差し替え＋保存 effect で止める・v3→v4 移行も走らせない ／
+  経営ダッシュボード＝`applyOverrides`・`openEditor`・`addYear`・`resetOverrides` で止める（経営の控えは従来どおり平文 override）
+- **⚠️ 読み直しを自前で重ねない**。supabase-js（postgrest-js）が GET の通信失敗を 1s・2s・4s 待ちで3回やり直すので、
+  止まっているときの「読み込み中」は約7秒。自前で1回足すと約15秒、順番に2つ読むと25秒超になった（ベースアップは Promise.all に）
+- 早見表も同じ `loadGuarded` を使い、控えで出せたものは「クラウドに繋がりません／この端末の控え（◯時点）で表示」と言う
+- 検証のしかた：`.env.development.local` に `VITE_SUPABASE_URL=https://paused-test.invalid` を置いて dev を立て直すと停止中を再現できる
+  （同じポートなら先に通常起動で作った控えが残る）。**終わったら必ず消す**
+- 再発防止の定期アクセスは別リポジトリ `C:\dev\sizucu-keepalive`（Private・GitHub Actions で2日に1回 app_state を読む）

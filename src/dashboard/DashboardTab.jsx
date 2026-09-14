@@ -11,7 +11,9 @@ import {
 } from "recharts";
 import { seed } from "./seed.js"; // 医師名（doctors）は seed から直接読む
 import BasicFee from "./BasicFee.jsx";
-import { cloudLoad, cloudSave, CLOUD_KEYS } from "../cloud";
+import { loadGuarded, cloudSave, CLOUD_KEYS } from "../cloud";
+import { LoadBanner } from "../components/LoadBanner";
+import { makeBlockedNotice } from "../loadNotice";
 import { C, FONT_SANS, FONT_HEAD } from "./theme.js";
 import {
   CORP_NAME,
@@ -148,6 +150,10 @@ export default function DashboardTab({ view = "keiei" }) {
   // データ＝暗号化seed（基準値）＋ この端末に保存した手入力(override)をマージ
   const [overrides, setOverrides] = useState(loadOverrides);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle|loading|saving|synced|offline|error
+  // 読み込みの結果。クラウドを読めなかったときは readOnly＝保存させない（補助金・ベースアップと同じ扱い）
+  const [loadInfo, setLoadInfo] = useState(null); // { readOnly, source, cachedAt }
+  const readOnly = loadInfo ? loadInfo.readOnly : true;
+  const [blocked] = useState(makeBlockedNotice);
 
   // クラウドへ暗号化して保存
   const pushCloud = async (o) => {
@@ -160,6 +166,7 @@ export default function DashboardTab({ view = "keiei" }) {
     }
   };
   const applyOverrides = (o) => {
+    if (readOnly) return blocked(); // ★読めていないのに保存すると、古い控えでクラウドの本物を上書きする★
     const stamped = { ...o, _ts: Date.now() }; // 更新時刻を刻む（端末間の新旧判定に使う）
     setOverrides(stamped);
     saveOverrides(stamped); // オフライン用のローカルキャッシュ
@@ -169,14 +176,28 @@ export default function DashboardTab({ view = "keiei" }) {
   // 起動時にクラウドと突き合わせ（全端末で同じ数字を表示）
   // ・クラウドが有効でローカルより新しい → クラウドを採用
   // ・ローカルの方が新しい/クラウドが空 → ローカルを守り、クラウドへアップロード（＝空データで実データを消さない）
+  // ・クラウドを読めなかった → この端末の控え（localStorage）で表示し、保存はさせない
+  //   （以前は「読めない」を「クラウドが空」と同じに扱い、控えでクラウドを上書きしに行っていた）
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setSyncStatus("loading");
-        const cloud = await cloudLoad(CLOUD_KEYS.dashboard);
+        const res = await loadGuarded(CLOUD_KEYS.dashboard);
         const localNow = loadOverrides();
         if (!alive) return;
+        if (res.readOnly) {
+          const hasLocal = ovHasData(localNow);
+          setLoadInfo({
+            readOnly: true,
+            source: hasLocal ? "cache" : "none",
+            cachedAt: hasLocal && localNow._ts ? new Date(localNow._ts).toISOString() : null,
+          });
+          setSyncStatus("offline");
+          return;
+        }
+        setLoadInfo({ readOnly: false, source: "cloud", cachedAt: null });
+        const cloud = res.data;
         const cloudOk = ovHasData(cloud);
         const localOk = ovHasData(localNow);
         if (cloud && cloudOk && (!localOk || (cloud._ts || 0) >= (localNow._ts || 0))) {
@@ -197,7 +218,16 @@ export default function DashboardTab({ view = "keiei" }) {
           setSyncStatus("synced");
         }
       } catch {
-        if (alive) setSyncStatus("offline"); // 通信不可時はローカルの内容で継続
+        if (!alive) return;
+        // 想定外の失敗も「読めなかった」と同じ扱い（控えで見せるだけ・保存させない）
+        const localNow = loadOverrides();
+        const hasLocal = ovHasData(localNow);
+        setLoadInfo({
+          readOnly: true,
+          source: hasLocal ? "cache" : "none",
+          cachedAt: hasLocal && localNow._ts ? new Date(localNow._ts).toISOString() : null,
+        });
+        setSyncStatus("offline");
       }
     })();
     return () => {
@@ -333,6 +363,7 @@ export default function DashboardTab({ view = "keiei" }) {
 
   // ── 月データの入力・編集 ──────────────────────────────
   const openEditor = () => {
+    if (readOnly) return blocked();
     if (isCorp) {
       const storedLabor = corpLabor[year] && corpLabor[year][selPeriod] != null ? corpLabor[year][selPeriod] : (cur ? cur.labor : "");
       setForm({ total: "", other: "", tech: "", drug: "", labor: storedLabor === "" ? "" : String(storedLabor) });
@@ -390,6 +421,7 @@ export default function DashboardTab({ view = "keiei" }) {
     setEditing(false);
   };
   const addYear = () => {
+    if (readOnly) return blocked();
     const input = window.prompt("追加する年度（西暦4桁）を入力してください。例：2026");
     if (!input) return;
     const y = input.replace(/[^0-9]/g, "").slice(0, 4);
@@ -416,6 +448,7 @@ export default function DashboardTab({ view = "keiei" }) {
   };
 
   const resetOverrides = () => {
+    if (readOnly) return blocked();
     if (window.confirm("この端末で手入力した数字をすべて消して、基準データに戻します。よろしいですか？")) {
       applyOverrides({ pharm: {}, corpLabor: {}, years: [] });
       setEditing(false);
@@ -489,6 +522,15 @@ export default function DashboardTab({ view = "keiei" }) {
           </div>
           <SyncBadge status={syncStatus} />
         </div>
+
+        {loadInfo && loadInfo.readOnly && (
+          <LoadBanner
+            what="経営の数字"
+            source={loadInfo.source}
+            cachedAt={loadInfo.cachedAt}
+            fallbackNote="この端末に控えも無いため、基準データだけを表示しています。"
+          />
+        )}
 
         {view === "kihonryo" && (
           <BasicFee

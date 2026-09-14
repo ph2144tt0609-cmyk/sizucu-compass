@@ -1061,3 +1061,47 @@
     width: 130px;
   }
 }
+
+/* ── クラウドを読めなかったときの赤帯（全タブ共通・components/LoadBanner.tsx） ── */
+.load-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--red);
+  border-left: 3px solid var(--red);
+  border-radius: var(--radius-sm);
+  background: var(--red-bg);
+  color: var(--text);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.load-banner-mark {
+  font-weight: 800;
+  color: var(--red);
+}
+.load-banner-text {
+  min-width: 0;
+}
+.load-banner-sub {
+  color: var(--muted);
+}
+.load-banner-btn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .load-banner {
+    flex-wrap: wrap;
+  }
+}

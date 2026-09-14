@@ -30,7 +30,8 @@ import {
   seriesOf,
 } from "./pharmModel.js";
 import { judgeBasicFee, basicPeriods, RECEIPT_LIMIT, CONC_LIMIT } from "./basicFeeCalc.js";
-import { cloudLoadEx, CLOUD_KEYS } from "../cloud";
+import { loadGuarded, CLOUD_KEYS } from "../cloud";
+import { fmtCachedAt } from "../loadNotice";
 import { buildReceipts, periodToYm } from "../dashboardReceipts";
 import { migrateBaseup, defaultState, baseupSummary, PHARMACY_NAMES } from "../baseupCalc";
 import { progressOf } from "../subsidyStatus";
@@ -99,14 +100,9 @@ function Delta({ cur, prev, unit, invert }) {
   );
 }
 
-// 通信の一過性の失敗で「データなし」に見えるのを防ぐため、1回だけ読み直す
+// 読み直し1回・端末の控えへの切り替えは、各タブと同じ loadGuarded（../cloud.ts）に任せる
 async function loadCloud(key) {
-  let res = await cloudLoadEx(key).catch(() => ({ data: null, status: "error" }));
-  if (res.status === "error") {
-    await new Promise((r) => setTimeout(r, 800));
-    res = await cloudLoadEx(key).catch(() => ({ data: null, status: "error" }));
-  }
-  return res;
+  return loadGuarded(key).catch(() => ({ data: null, status: "error", source: "none", cachedAt: null }));
 }
 
 const LOAD_LABEL = { error: "読み込めませんでした", locked: "合言葉で開けませんでした" };
@@ -141,13 +137,19 @@ export default function OverviewTab({ onJump }) {
       if (r.shops && r.shops.length) setShops(r.shops);
       // migrateBaseup は変換するだけ（保存はしない＝早見表は読むだけ）
       const m = migrateBaseup(b.data);
-      setBstate(m ? m.state : defaultState());
+      // ひな形（defaultState）を出すのは「本当にまだ保存されていない」ときだけ。
+      // 読めなかったのにひな形で集計すると、それらしい充当率が出てしまう
+      setBstate(m ? m.state : b.status === "empty" ? defaultState() : null);
       setSubsidies(Array.isArray(s.data) ? s.data : []);
       setStatus({
         dashboard: o.status,
         dashboardLocal: !!o.usedLocal, // クラウドは駄目でも端末の控えで出せている
         baseup: b.status,
+        baseupLocal: b.source === "cache", // クラウドは駄目でも端末の控えで出せている
+        baseupAt: b.cachedAt,
         subsidies: s.status,
+        subsidiesLocal: s.source === "cache",
+        subsidiesAt: s.cachedAt,
       });
       setLoading(false);
     })();
@@ -331,8 +333,15 @@ export default function OverviewTab({ onJump }) {
     });
 
     // ⑤ ベースアップ：受付回数（＝処方箋枚数）と賃金台帳
+    // 控えで出せているときは、そう言う（経営の月次と同じ）
+    const localRow = (row, at) => {
+      row.state = "クラウドに繋がりません";
+      row.detail = `この端末の控え${at ? `（${fmtCachedAt(at)} 時点）` : ""}で表示しています（いまは変更・保存できません）`;
+      return row;
+    };
     if (badLoad(status.baseup)) {
-      out.push(loadRow("baseup", "ベースアップ評価料のデータ", status.baseup));
+      const row = loadRow("baseup", "ベースアップ評価料のデータ", status.baseup);
+      out.push(status.baseupLocal ? localRow(row, status.baseupAt) : row);
     } else if (baseupAll) {
       // 月の枠は先の月まで用意されているので、まだ来ていない月は数えない
       const noReceipt = baseupAll.rows.filter((r) => !r.entered && r.ym <= last).map((r) => r.ym);
@@ -359,7 +368,8 @@ export default function OverviewTab({ onJump }) {
 
     // ⑥ 補助金：金額・期限が空のもの
     if (badLoad(status.subsidies)) {
-      out.push(loadRow("hojokin", "補助金のデータ", status.subsidies));
+      const row = loadRow("hojokin", "補助金のデータ", status.subsidies);
+      out.push(status.subsidiesLocal ? localRow(row, status.subsidiesAt) : row);
     } else if (subsidies.length) {
       const noAmount = subsidies.filter((s) => !Number(s.amount));
       const noDeadline = subsidies.filter((s) => !s.deadline);
@@ -391,6 +401,12 @@ export default function OverviewTab({ onJump }) {
     status.dashboard !== "ok" && status.dashboard !== "empty" ? "経営の月次" : "",
     status.baseup !== "ok" && status.baseup !== "empty" ? "ベースアップ評価料" : "",
     status.subsidies !== "ok" && status.subsidies !== "empty" ? "補助金" : "",
+  ].filter(Boolean);
+  // そのうち、端末の控えで出せているもの
+  const localLoads = [
+    status.dashboardLocal ? "経営の月次" : "",
+    status.baseupLocal ? "ベースアップ評価料" : "",
+    status.subsidiesLocal ? "補助金" : "",
   ].filter(Boolean);
 
   // ── 気になるところ（上から順に手を打つ順番）──
@@ -504,8 +520,8 @@ export default function OverviewTab({ onJump }) {
           <span style={{ fontWeight: 800, color: C.down }}>！</span>
           <span style={{ minWidth: 0 }}>
             <b>{failedLoads.join("・")}</b> を読み込めませんでした。
-            {status.dashboardLocal && status.dashboard !== "ok"
-              ? "経営の数字はこの端末の控えで表示しています。"
+            {failedLoads.every((n) => localLoads.includes(n))
+              ? "この端末の控えで表示しています（いまは変更・保存できません）。"
               : "この画面の数字は不完全です。"}
             （データは消えていません）
           </span>
@@ -773,8 +789,18 @@ export default function OverviewTab({ onJump }) {
           <ToolCard
             title="ベースアップ評価料"
             onClick={() => onJump && onJump("baseup")}
-            badge={baseup && baseup.count ? (baseup.ok ? "適合（充当OK）" : "要改善") : "未集計"}
-            badgeColor={baseup && baseup.count ? (baseup.ok ? C.up : C.down) : C.sub}
+            badge={
+              !bstate
+                ? LOAD_LABEL[status.baseup] || "読み込めませんでした"
+                : baseup && baseup.count
+                  ? status.baseupLocal
+                    ? "端末の控えで表示"
+                    : baseup.ok
+                      ? "適合（充当OK）"
+                      : "要改善"
+                  : "未集計"
+            }
+            badgeColor={!bstate || status.baseupLocal ? C.down : baseup && baseup.count ? (baseup.ok ? C.up : C.down) : C.sub}
             rows={
               baseup && baseup.count
                 ? [
@@ -791,7 +817,9 @@ export default function OverviewTab({ onJump }) {
             badge={
               status.subsidies === "ok" || status.subsidies === "empty"
                 ? `進行中 ${subsidy.active} 件`
-                : LOAD_LABEL[status.subsidies]
+                : status.subsidiesLocal
+                  ? "端末の控えで表示"
+                  : LOAD_LABEL[status.subsidies]
             }
             badgeColor={
               status.subsidies === "ok" || status.subsidies === "empty"
@@ -801,7 +829,7 @@ export default function OverviewTab({ onJump }) {
                 : C.down
             }
             rows={
-              status.subsidies !== "ok" && status.subsidies !== "empty"
+              status.subsidies !== "ok" && status.subsidies !== "empty" && !status.subsidiesLocal
                 ? [["状態", "再読み込みしてください"]]
                 : [
               ["未入金（申請済−振込済）", yen(subsidy.unpaid)],

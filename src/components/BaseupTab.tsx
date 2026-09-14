@@ -10,7 +10,9 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { cloudLoad, cloudSave, CLOUD_KEYS } from '../cloud'
+import { loadGuarded, cloudSave, CLOUD_KEYS, type GuardedLoad } from '../cloud'
+import { LoadBanner } from './LoadBanner'
+import { makeBlockedNotice } from '../loadNotice'
 import { loadDashboardReceipts } from '../dashboardReceipts'
 import {
   DEFAULT_HOURS,
@@ -88,27 +90,33 @@ export function BaseupTab() {
   const [notice, setNotice] = useState<{ backup: string; cloudSaved: boolean } | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const skipNextSave = useRef(true)
+  // 読み込みの結果。読めなかったとき（控え表示・中身なし）は readOnly＝保存させない。
+  // ★以前は読めないとひな形（defaultState）を出し、そのまま編集するとひな形でクラウドを上書きできてしまった★
+  const [load, setLoad] = useState<GuardedLoad<unknown> | null>(null)
+  const readOnly = load?.readOnly ?? true
+  const [blocked] = useState(makeBlockedNotice)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
-      // 経営ダッシュボードの処方箋枚数（＝算定回数）を読む
-      try {
-        const r = await loadDashboardReceipts()
-        if (alive) {
-          setReceipts(r.receipts)
-          setShops(sortShops(r.shops.length ? r.shops : PHARMACY_NAMES))
-        }
-      } catch {
-        if (alive) setShops(PHARMACY_NAMES)
+      // 経営ダッシュボードの処方箋枚数（＝算定回数）と、ベースアップ本体を同時に読む
+      // （順番に読むと、サーバーが止まっているときに読み込み中が2倍になる）
+      const [rr, res] = await Promise.all([
+        loadDashboardReceipts().catch(() => null),
+        loadGuarded<unknown>(CLOUD_KEYS.baseup),
+      ])
+      if (alive) {
+        setReceipts(rr ? rr.receipts : {})
+        setShops(sortShops(rr && rr.shops.length ? rr.shops : PHARMACY_NAMES))
       }
 
-      const saved = await cloudLoad<unknown>(CLOUD_KEYS.baseup)
+      const saved = res.data
       const m = migrateBaseup(saved)
 
       // 薬局別（v3）→ 法人1本（v4）への移行。
       // 上書きする前に、必ず移行前データの控えを取ってから切り替える。
-      if (m?.mergedFromShops) {
+      // （クラウドから読めたときだけ。端末の控えを見ているときは移行＝保存をしない）
+      if (m?.mergedFromShops && !res.readOnly) {
         const backup = JSON.stringify(saved, null, 2)
         try {
           localStorage.setItem(BACKUP_KEY, backup)
@@ -134,7 +142,10 @@ export function BaseupTab() {
       }
 
       if (!alive) return
-      setState(m?.state ?? defaultState())
+      setLoad(res)
+      // ひな形を出すのは「本当にまだ保存されていない」ときだけ。読めなかったときは出さない
+      if (m) setState(m.state)
+      else if (!res.readOnly) setState(defaultState())
     })()
     return () => {
       alive = false
@@ -143,7 +154,7 @@ export function BaseupTab() {
 
   // 変更を保存（初回ロード直後の1回はスキップ・以降は0.8秒デバウンス）
   useEffect(() => {
-    if (!state) return
+    if (!state || readOnly) return
     if (skipNextSave.current) {
       skipNextSave.current = false
       return
@@ -161,9 +172,15 @@ export function BaseupTab() {
       })
     }, 800)
     return () => clearTimeout(t)
-  }, [state])
+  }, [state, readOnly])
 
-  if (!state) return <p className="muted center">読み込み中…</p>
+  if (!load) return <p className="muted center">読み込み中…</p>
+  if (!state)
+    return (
+      <div className="baseup">
+        <LoadBanner what="ベースアップ評価料のデータ" source={load.source} cachedAt={load.cachedAt} />
+      </div>
+    )
 
   const closeNotice = () => {
     try {
@@ -176,6 +193,9 @@ export function BaseupTab() {
 
   return (
     <div className="baseup">
+      {load.readOnly && (
+        <LoadBanner what="ベースアップ評価料のデータ" source={load.source} cachedAt={load.cachedAt} />
+      )}
       {notice && (
         <div className="notice">
           <div>
@@ -212,7 +232,7 @@ export function BaseupTab() {
         state={state}
         receipts={receipts}
         shops={shops}
-        onChange={setState}
+        onChange={readOnly ? blocked : setState}
         saveStatus={saveStatus}
       />
     </div>

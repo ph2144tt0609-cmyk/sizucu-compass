@@ -7,7 +7,9 @@ import { Migrate } from './components/Migrate'
 import DashboardTab from './dashboard/DashboardTab.jsx'
 import OverviewTab from './dashboard/OverviewTab.jsx'
 import { Gate } from './Gate'
-import { cloudLoad, cloudSave, CLOUD_KEYS, clearPass } from './cloud'
+import { loadGuarded, cloudSave, CLOUD_KEYS, clearPass, type GuardedLoad } from './cloud'
+import { LoadBanner } from './components/LoadBanner'
+import { makeBlockedNotice } from './loadNotice'
 import { progressOf, groupRankOf } from './subsidyStatus'
 import { yen } from './expiry'
 import './App.css'
@@ -123,13 +125,18 @@ function SubsidiesTab() {
   const [editing, setEditing] = useState<Subsidy | null>(null)
   const [creating, setCreating] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
+  // 読み込みの結果。読めなかったとき（控え表示・中身なし）は readOnly＝保存させない
+  const [load, setLoad] = useState<GuardedLoad<Subsidy[]> | null>(null)
+  const readOnly = load?.readOnly ?? true
+  const [blocked] = useState(makeBlockedNotice)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const rows = await cloudLoad<Subsidy[]>(CLOUD_KEYS.subsidies)
+      const res = await loadGuarded<Subsidy[]>(CLOUD_KEYS.subsidies)
       if (!alive) return
-      setSubsidies(Array.isArray(rows) ? rows : [])
+      setLoad(res)
+      setSubsidies(Array.isArray(res.data) ? res.data : [])
       setDataLoading(false)
     })()
     return () => {
@@ -138,7 +145,12 @@ function SubsidiesTab() {
   }, [])
 
   // 画面の内容をそのままクラウドへ（暗号化して保存）
+  // ★読み込めていないときは保存しない★ 空の一覧に1件足して保存すると、クラウドの本物がその1件で上書きされる
   async function persist(next: Subsidy[]) {
+    if (readOnly) {
+      blocked()
+      return
+    }
     setSubsidies(next)
     const ok = await cloudSave(CLOUD_KEYS.subsidies, next)
     if (!ok) alert('保存に失敗しました。通信の状況をご確認ください。')
@@ -234,6 +246,7 @@ function SubsidiesTab() {
   }
 
   async function handleSave(form: Subsidy, followups: Followup[]) {
+    if (readOnly) return blocked() // 編集画面は閉じずに残す（入力が消えないように）
     const isNew = !form.id
     const id = form.id || newId()
     const row = buildRow(form, followups, id)
@@ -246,6 +259,7 @@ function SubsidiesTab() {
   }
 
   async function handleDelete(id: string) {
+    if (readOnly) return blocked() // 編集画面は閉じずに残す（入力が消えないように）
     if (!confirm('この補助金を削除します。よろしいですか？')) return
     setEditing(null)
     await persist(subsidies.filter((s) => s.id !== id))
@@ -253,6 +267,7 @@ function SubsidiesTab() {
 
   // いまの内容をコピーして新しい補助金を作り、そのコピーを編集画面で開く
   async function handleDuplicate(form: Subsidy, followups: Followup[]) {
+    if (readOnly) return blocked() // 編集画面は閉じずに残す（入力が消えないように）
     const id = newId()
     const copy = { ...buildRow(form, followups, id), created_at: new Date().toISOString() }
     setCreating(false)
@@ -262,6 +277,10 @@ function SubsidiesTab() {
 
   return (
     <>
+      {load?.readOnly && (
+        <LoadBanner what="補助金のデータ" source={load.source} cachedAt={load.cachedAt} />
+      )}
+
       <div className="summary">
         <div className="sum-card sum-count">
           <div className="sum-latin">Total</div>
@@ -368,7 +387,12 @@ function SubsidiesTab() {
             <option value="dept">区分順</option>
             <option value="name">名前順</option>
           </select>
-          <button className="btn-primary" onClick={() => setCreating(true)}>
+          <button
+            className="btn-primary"
+            disabled={readOnly}
+            title={readOnly ? 'サーバーに繋がっていないため、いまは追加できません' : undefined}
+            onClick={() => setCreating(true)}
+          >
             ＋ 新規追加
           </button>
         </div>
